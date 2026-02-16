@@ -1,0 +1,7 @@
+/build/
+/build-*/
+/evidence/
+/out/
+/.agent-local/
+.DS_Store
+__pycache__/
