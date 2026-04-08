@@ -1,0 +1,12 @@
+# Soft polyphonic keys with moving low-pass color and stereo placement.
+param cutoff = 2350;
+param level = 0.25;
+voice = poly_triangle(0.016, 0.30);
+color = lowpass(voice, cutoff, 0.78);
+soft = saturate(color, 1.1);
+body = mul(soft, level);
+lfo = sine(0.37);
+position = mul(lfo, 0.28);
+left = pan_left(body, position);
+right = pan_right(body, position);
+out(left, right);
