@@ -1,6 +1,8 @@
 #include "resonant/vm.hpp"
 
 #include "dsp.hpp"
+#include "effects.hpp"
+#include "resonant/spectral.hpp"
 #include "numeric.hpp"
 
 #include <bit>
@@ -29,6 +31,8 @@ static_assert(sizeof(Voice) <= 8 * sizeof(float));
 struct Memory {
     std::vector<float> cells;
     std::vector<Voice> voices;
+    std::unique_ptr<Convolver> convolution;
+    dsp::Tank tank;
     std::uint32_t cursor{};
     std::uint32_t rng{};
 };
@@ -105,6 +109,7 @@ struct Vm::Impl {
     double inverse_rate;
     Execution execution;
     const dsp::Tables& tables;
+    const dsp::Halfband& halfband;
     std::vector<float> registers;
     std::vector<float> tail;
     std::vector<Memory> memory;
@@ -115,14 +120,21 @@ struct Vm::Impl {
 
     Impl(const VerifiedProgram& program, std::uint32_t sample_rate, Execution mode)
         : checked(verify(program.program())), rate(sample_rate), inverse_rate(1.0 / sample_rate), execution(mode),
-          tables(dsp::tables()), registers(checked.program().registers * max_block),
+          tables(dsp::tables()), halfband(dsp::halfband()), registers(checked.program().registers * max_block),
           tail(checked.program().registers), memory(checked.program().states.size()),
           parameters(checked.program().parameters.size()) {
         for (std::size_t i = 0; i < memory.size(); ++i) {
             auto& slot = memory[i];
             const auto& layout = checked.program().states[i];
             if (polyphonic(layout.owner)) slot.voices.resize(voice_count);
-            else slot.cells.resize(layout.words);
+            else if (layout.owner == Op::convolve_short || layout.owner == Op::convolve_long) {
+                const bool hall = layout.owner == Op::convolve_long;
+                slot.convolution = std::make_unique<Convolver>(hall ? 128 : 64, room_impulse(hall, rate));
+            } else {
+                slot.cells.resize(layout.words);
+                if (layout.owner == Op::room) slot.tank.configure(rate);
+            }
+            if (layout.owner == Op::limiter) slot.cells.back() = 1;
             slot.rng = static_cast<std::uint32_t>(layout.key) | 1U;
         }
         for (std::size_t i = 0; i < parameters.size(); ++i) {
@@ -240,9 +252,33 @@ struct Vm::Impl {
         case Op::highpass:
         case Op::bandpass:
             return dsp::filter(ins.op, memory[ins.slot].cells.data(), x, y, z, inverse_rate);
-        case Op::saturate: {
-            const auto level = x * std::clamp(y, 0.0F, 64.0F);
-            return level / (1.0F + std::abs(level));
+        case Op::saturate: return dsp::saturation(x, y);
+        case Op::oversaturate: {
+            auto& state = memory[ins.slot];
+            return dsp::oversaturate(halfband, state.cells, state.cursor, x, y);
+        }
+        case Op::limiter: {
+            auto& state = memory[ins.slot];
+            return dsp::limit(state.cells, state.cursor, x, y, z, inverse_rate);
+        }
+        case Op::align: {
+            auto& state = memory[ins.slot];
+            const auto previous = state.cells[state.cursor];
+            advance(state, x);
+            return previous;
+        }
+        case Op::convolve_short:
+        case Op::convolve_long: {
+            auto& state = memory[ins.slot];
+            const auto result = state.convolution->process(x);
+            const auto mix = std::clamp(y, 0.0F, 1.0F);
+            return result.dry + mix * (result.wet - result.dry);
+        }
+        case Op::room: {
+            auto& state = memory[ins.slot];
+            const auto wet = state.tank.process(state.cells, x, y);
+            const auto mix = std::clamp(z, 0.0F, 1.0F);
+            return x + mix * (wet - x);
         }
         case Op::pan_left:
         case Op::pan_right: {

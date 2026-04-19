@@ -10,7 +10,7 @@ using namespace resonant;
 int main() {
     std::mt19937 rng(9001);
     const auto sample = [&] { return static_cast<float>(rng() % 4096) / 2048 - 1; };
-    for (const std::size_t n : {8, 32, 128, 512}) {
+    for (const std::size_t n : {8U, 32U, 128U, 512U}) {
         const Fft plan(n);
         std::vector<std::complex<float>> x(n);
         for (auto& c : x) c = {sample(), sample()};
@@ -34,7 +34,7 @@ int main() {
     std::array<float, 1025> signal{};
     for (auto& x : signal) x = sample();
     for (auto& x : impulse) x = 0.02F * sample();
-    for (const std::size_t p : {32, 64, 128, 256, 512}) {
+    for (const std::size_t p : {32U, 64U, 128U, 256U, 512U}) {
         Convolver convolution(p, impulse);
         CHECK(convolution.latency() == p);
         for (std::size_t i = 0; i < signal.size() + impulse.size() + p; ++i) {

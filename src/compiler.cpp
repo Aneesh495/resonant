@@ -70,14 +70,14 @@ private:
         if (expression.type != Declaration::node) {
             vertex.op = expression.type == Declaration::parameter ? Op::parameter : Op::literal;
             vertex.value = numeric::bounded(expression.arguments[0].value);
-        } else if (expression.operation == "delay") {
-            if (expression.arguments.size() != 2) throw Diagnostic(vertex.span, "delay requires signal and frame count");
+        } else if (expression.operation == "delay" || expression.operation == "align") {
+            if (expression.arguments.size() != 2) throw Diagnostic(vertex.span, expression.operation + " requires signal and frame count");
             const auto& extent = expression.arguments[1];
             if (!extent.reference.empty() || extent.value < 1 || extent.value > static_cast<float>(max_delay) ||
                 std::floor(extent.value) != extent.value) {
-                throw Diagnostic(extent.span, "delay frame count must be a bounded positive integer literal");
+                throw Diagnostic(extent.span, "frame count must be a bounded positive integer literal");
             }
-            vertex.op = Op::delay_read;
+            vertex.op = expression.operation == "delay" ? Op::delay_read : Op::align;
             vertex.words = static_cast<std::uint32_t>(extent.value);
             vertex.input[0] = resolve(expression.arguments[0]);
             vertex.inputs = 1;
@@ -98,9 +98,9 @@ private:
     }
 
     static Op source_op(const Expression& expression) {
-        for (auto i = static_cast<unsigned>(Op::add); i < static_cast<unsigned>(Op::output); ++i) {
+        for (auto i = static_cast<unsigned>(Op::add); i < static_cast<unsigned>(Op::count); ++i) {
             const auto op = static_cast<Op>(i);
-            if (opcode(op).name == expression.operation) return op;
+            if (op != Op::output && opcode(op).name == expression.operation) return op;
         }
         throw Diagnostic(expression.span, "unknown operation '" + expression.operation + "'");
     }

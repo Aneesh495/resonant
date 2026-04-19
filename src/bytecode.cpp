@@ -1,6 +1,9 @@
 #include "resonant/bytecode.hpp"
 
 #include "bytes.hpp"
+#include "effects.hpp"
+
+#include <algorithm>
 
 #include <bit>
 #include <cmath>
@@ -41,7 +44,13 @@ constexpr std::array<Opcode, static_cast<std::size_t>(Op::count)> contracts{{
     {"gate",         3, Rule::first_audio, true,  28, 1},
     {"delay_mod",    3, Rule::first_audio, true,  34, 65536},
     {"allpass",      3, Rule::first_audio, true,  25, 8192},
-    {"out",          2, Rule::first_audio, false, 4,  0}
+    {"out",          2, Rule::first_audio, false, 4,  0},
+    {"align",        1, Rule::first_audio, true, 8, 1},
+    {"convolve_short", 2, Rule::first_audio, true, 18500, 8192, 64},
+    {"convolve_long",  2, Rule::first_audio, true, 42000, 16384, 128},
+    {"room",         3, Rule::first_audio, true, 160, dsp::tank_words},
+    {"oversaturate", 2, Rule::first_audio, true, 1350, 2 * dsp::halfband_length, dsp::oversampling_latency},
+    {"limiter",      3, Rule::first_audio, true, 170, dsp::limiter_latency + 1, dsp::limiter_latency}
 }};
 
 constexpr std::uint32_t magic = 0x43534252; // RBSC
@@ -84,8 +93,9 @@ std::uint64_t name_key(std::string_view name) noexcept {
     return result;
 }
 
-VerifiedProgram::VerifiedProgram(Program program, std::uint32_t work, std::uint32_t words, bool delay)
-    : program_(std::move(program)), work_(work), words_(words), delay_(delay) {}
+VerifiedProgram::VerifiedProgram(Program program, std::uint32_t work, std::uint32_t words,
+                                 bool delay, std::array<std::uint32_t, 2> latency)
+    : program_(std::move(program)), work_(work), words_(words), delay_(delay), latency_(latency) {}
 
 VerifiedProgram verify(Program program) {
     validate_counts(program.registers, program.states.size(), program.parameters.size(), program.instructions.size());
@@ -95,7 +105,7 @@ VerifiedProgram verify(Program program) {
         const auto& contract = opcode(state.owner);
         require(state.key != 0, "zero state identity");
         require(contract.state_words != 0, "stateless opcode owns state");
-        if (state.owner == Op::delay_read) {
+        if (state.owner == Op::delay_read || state.owner == Op::align) {
             require(state.words >= 1 && state.words <= max_delay, "delay extent out of bounds");
         } else {
             require(state.words == contract.state_words, "invalid fixed state extent");
@@ -114,6 +124,7 @@ VerifiedProgram verify(Program program) {
 
     std::array<bool, max_registers> defined{};
     std::array<Rate, max_registers> rates{};
+    std::array<std::uint32_t, max_registers> latency{};
     std::array<bool, max_states> state_seen{};
     std::array<bool, max_states> writes{};
     std::array<bool, max_parameters> parameter_seen{};
@@ -130,6 +141,7 @@ VerifiedProgram verify(Program program) {
         work += contract.work;
 
         bool has_audio = false;
+        std::uint32_t input_latency = 0;
         for (std::size_t j = 0; j < ins.in.size(); ++j) {
             const auto reg = ins.in[j];
             if (j >= contract.inputs) {
@@ -139,6 +151,7 @@ VerifiedProgram verify(Program program) {
             require(reg < program.registers && defined[reg], "undefined or out-of-bounds source register");
             require(!contract.writes_register || ins.dst != reg, "destination aliases source");
             has_audio |= rates[reg] == Rate::audio;
+            input_latency = std::max(input_latency, latency[reg]);
         }
         if (contract.rule == Rule::first_audio) {
             require(rates[ins.in[0]] == Rate::audio, "first input must be audio rate");
@@ -152,6 +165,7 @@ VerifiedProgram verify(Program program) {
             require(ins.dst < program.registers, "destination register out of bounds");
             defined[ins.dst] = true;
             rates[ins.dst] = ins.rate;
+            latency[ins.dst] = input_latency + contract.latency;
         } else {
             require(ins.dst == 0, "nonzero unused destination operand");
         }
@@ -160,6 +174,7 @@ VerifiedProgram verify(Program program) {
             require(ins.slot < program.states.size(), "state slot out of bounds");
             require(program.states[ins.slot].owner == ins.op && !state_seen[ins.slot], "invalid or repeated state owner");
             state_seen[ins.slot] = true;
+            if (ins.op == Op::align) latency[ins.dst] += program.states[ins.slot].words;
         } else if (ins.op == Op::delay_write) {
             epilogue = true;
             delay = true;
@@ -184,7 +199,8 @@ VerifiedProgram verify(Program program) {
     for (std::size_t i = 0; i < program.parameters.size(); ++i) {
         require(parameter_seen[i], "orphan parameter slot");
     }
-    return VerifiedProgram(std::move(program), work, words, delay);
+    const auto inputs = program.instructions.back().in;
+    return VerifiedProgram(std::move(program), work, words, delay, {latency[inputs[0]], latency[inputs[1]]});
 }
 
 std::vector<std::byte> encode(const VerifiedProgram& checked) {
