@@ -33,6 +33,13 @@ public:
         read_.store(read + 1, std::memory_order_release);
     }
 
+    std::uint32_t discard_all() noexcept {
+        const auto read = read_.load(std::memory_order_relaxed);
+        const auto write = write_.load(std::memory_order_acquire);
+        read_.store(write, std::memory_order_release);
+        return write - read;
+    }
+
     bool pop(T& value) noexcept {
         if (!peek(value)) return false;
         consume();
