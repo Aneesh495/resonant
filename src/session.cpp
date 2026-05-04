@@ -271,7 +271,7 @@ Timeline schedule(const Session& session, std::uint32_t rate) {
 }
 
 OfflineRender render_offline(const VerifiedProgram& program, const Timeline& timeline, std::uint32_t rate,
-                             std::size_t block_size, Execution execution) {
+                             std::size_t block_size, Execution execution, const std::atomic<bool>* cancel) {
     check(timeline.frames > 0 && timeline.frames <= max_render_frames, "render frame budget exceeded");
     check(block_size >= 1 && block_size <= max_block, "invalid offline block size");
     check(timeline.events.size() <= max_scheduled_events, "offline event budget exceeded");
@@ -290,6 +290,7 @@ OfflineRender render_offline(const VerifiedProgram& program, const Timeline& tim
     result.samples.resize(static_cast<std::size_t>(2 * timeline.frames));
     std::size_t next = 0;
     for (std::uint64_t frame = 0; frame < timeline.frames;) {
+        check(cancel == nullptr || !cancel->load(std::memory_order_relaxed), "export cancelled");
         auto end = std::min(frame + block_size, timeline.frames);
         const auto remaining = timeline.events.size() - next;
         if (remaining > events_per_callback && timeline.events[next + events_per_callback].frame < end) {
