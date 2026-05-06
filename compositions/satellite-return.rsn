@@ -1,0 +1,35 @@
+resonant-session 2
+length 12600
+tempo 0 510000
+note 0 2000 0 50 .58
+note 360 1290 0 62 .58
+note 1080 1340 0 69 .49
+note 2280 810 0 74 .55
+note 3240 2200 0 47 .55
+note 4320 790 0 66 .53
+note 5160 810 0 62 .53
+note 6000 1120 0 71 .48
+note 6840 1740 0 52 .58
+note 6960 1260 0 64 .52
+note 7680 2100 0 72 .5
+note 9960 1440 0 50 .55
+note 10200 1210 0 69 .53
+control 1240 send .9 21000
+control 3880 width -.5 16000
+control 8160 send .3 16000
+control 8160 width .75 48000
+source
+# Dry bus plus two distinct send/return lanes with a shared delay budget.
+param send = .36;
+param width = .57;
+v = poly_triangle(.011,.33);
+dry_bus = mul(v,.26);
+aux_send = mul(dry_bus,send);
+near_return = convolve_short(aux_send,1);
+far_return = convolve_short(aux_send,.86);
+aligned = align(dry_bus,64);
+near_bus = pan_left(near_return,width);
+far_bus = pan_right(far_return,width);
+l = add(aligned,near_bus);
+r = add(aligned,far_bus);
+out(l,r);

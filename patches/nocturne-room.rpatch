@@ -1,0 +1,10 @@
+# Algorithmic comb and all-pass tail around a dry sine voice.
+param roommix = .38;
+v = poly_sine(.034,.52);
+dark = lowpass(v,1040,.75);
+left = room(dark,.78,roommix);
+hpf = highpass(v,155,.71);
+right = room(hpf,.83,roommix);
+l = mul(left,.35);
+r = mul(right,.35);
+out(l,r);

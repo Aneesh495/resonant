@@ -1,0 +1,8 @@
+# A small all-pass cell puts a folded reflection behind each note.
+p = poly_triangle(.003,.076);
+a = allpass(p,173,.62);
+b = mul(a,.29);
+direct = mul(p,.18);
+left = add(b,direct);
+right = pan_right(left,.25);
+out(left,right);

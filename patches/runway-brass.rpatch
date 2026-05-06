@@ -1,0 +1,11 @@
+# Bright saw transient with slow cutoff wobble and soft knees.
+param center = 2700;
+v = poly_saw(.035,.29);
+motion = sine(3.1);
+depth = mul(motion,440);
+cut = add(center,depth);
+f = lowpass(v,cut,1.3);
+soft = saturate(f,1.8);
+l = mul(soft,.37);
+r = pan_right(l,.19);
+out(l,r);

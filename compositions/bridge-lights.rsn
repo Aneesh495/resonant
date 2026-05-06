@@ -1,0 +1,31 @@
+resonant-session 2
+length 9600
+tempo 0 432000
+loop 1920 5760 2
+note 0 410 0 40 .78
+note 840 410 0 52 .61
+note 1440 335 0 55 .68
+note 1920 420 0 45 .78
+note 2640 260 0 57 .61
+note 3360 420 0 60 .68
+note 3920 275 0 62 .53
+note 4320 390 0 57 .54
+note 5040 290 0 55 .61
+note 5520 200 0 52 .57
+note 6240 640 0 43 .66
+note 7440 780 0 47 .56
+control 1800 regen .66 2600
+control 4800 regen .52 4800
+control 7680 regen .38 11000
+source
+# A delayed graph edge closes a sample-clocked feedback loop.
+param regen = .49;
+v = poly_sine(.006,.13);
+memory = delay(sum,11000);
+color = lowpass(memory,1100,.73);
+back = mul(color,regen);
+sum = add(v,back);
+dry = mul(v,.24);
+send = mul(color,.24);
+right = add(dry,send);
+out(dry,right);

@@ -1,0 +1,11 @@
+# Two moving taps create a narrow stereo flange.
+v = poly_saw(.018,.15);
+motion = sine(.38);
+sweep = mul(motion,49);
+tap = add(sweep,62);
+del = delay_mod(v,tap,.32);
+echo = mul(del,.15);
+dry = mul(v,.20);
+l = add(dry,echo);
+r = sub(dry,echo);
+out(l,r);

@@ -1,0 +1,14 @@
+# Dry bus plus two distinct send/return lanes with a shared delay budget.
+param send = .36;
+param width = .57;
+v = poly_triangle(.011,.33);
+dry_bus = mul(v,.26);
+aux_send = mul(dry_bus,send);
+near_return = convolve_short(aux_send,1);
+far_return = convolve_short(aux_send,.86);
+aligned = align(dry_bus,64);
+near_bus = pan_left(near_return,width);
+far_bus = pan_right(far_return,width);
+l = add(aligned,near_bus);
+r = add(aligned,far_bus);
+out(l,r);

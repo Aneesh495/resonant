@@ -1,0 +1,9 @@
+# Two envelopes meet in a synthetic short hall.
+param blend = .64;
+voice = poly_triangle(.19,.72);
+shade = poly_sine(.24,.9);
+body = add(voice,shade);
+tame = lowpass(body,1770,.66);
+hall = convolve_long(tame,blend);
+outmix = mul(hall,.28);
+out(outmix);

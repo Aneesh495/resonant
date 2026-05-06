@@ -1,0 +1,9 @@
+# Opposite polarity short all-pass networks make a spring-like return.
+v = poly_triangle(.005,.15);
+a = allpass(v,117,.64);
+b = allpass(a,311,-.54);
+c = allpass(v,177,-.57);
+d = allpass(c,257,.58);
+l = mul(b,.3);
+r = mul(d,.3);
+out(l,r);

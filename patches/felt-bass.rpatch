@@ -1,0 +1,11 @@
+# Rounded sine bass with a small band-passed attack layer.
+param wool = 590;
+v = poly_sine(.009,.29);
+edge = poly_triangle(.004,.10);
+band = bandpass(edge,350,1.25);
+click = mul(band,.18);
+body = lowpass(v,wool,.65);
+m = add(body,click);
+soft = saturate(m,1.1);
+o = mul(soft,.33);
+out(o);

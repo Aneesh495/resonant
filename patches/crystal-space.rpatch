@@ -1,0 +1,9 @@
+# Short and long synthetic impulse presets aligned at the outputs.
+param wet = .7;
+v = poly_triangle(.021,.37);
+short = convolve_short(v,wet);
+early = align(short,64);
+late = convolve_long(v,wet);
+l = mul(early,.32);
+r = mul(late,.32);
+out(l,r);

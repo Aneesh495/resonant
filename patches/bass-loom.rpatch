@@ -1,0 +1,7 @@
+# Low-pass pulse layer with a slow bias toward the low mids.
+param cutoff = 460;
+s = poly_pulse(.008,.16);
+f = lowpass(s,cutoff,1.32);
+g = saturate(f,2.4);
+o = mul(g,.32);
+out(o);

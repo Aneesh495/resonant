@@ -1,0 +1,29 @@
+resonant-session 2
+length 13440
+tempo 0 590000
+tempo 7680 520000
+note 0 2130 0 48 .64
+note 0 1900 0 67 .36
+note 1440 1960 0 72 .54
+note 2880 1920 0 55 .57
+note 3360 2300 0 76 .52
+note 5760 1440 0 69 .45
+note 6240 930 0 64 .51
+note 7680 2710 0 45 .55
+note 7680 2400 0 72 .58
+note 9120 1320 0 74 .47
+note 10560 1650 0 67 .43
+control 0 wet .2 0
+control 2800 wet .8 12400
+control 7680 wet .55 24000
+control 11600 wet .98 8000
+source
+# Short and long synthetic impulse presets aligned at the outputs.
+param wet = .7;
+v = poly_triangle(.021,.37);
+short = convolve_short(v,wet);
+early = align(short,64);
+late = convolve_long(v,wet);
+l = mul(early,.32);
+r = mul(late,.32);
+out(l,r);

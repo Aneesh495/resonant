@@ -1,0 +1,9 @@
+# A narrow, metallic tine with an inharmonic sideband above the note.
+voice = poly_sine(.002,.28);
+carrier = sine(187.3);
+cross = mul(voice,carrier);
+edge = highpass(cross,780,1.8);
+dry = mul(voice,.19);
+bright = mul(edge,.11);
+outmix = add(dry,bright);
+out(outmix);

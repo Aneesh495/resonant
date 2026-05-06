@@ -1,0 +1,11 @@
+# A voice envelope opens a band of breath noise.
+v = poly_sine(.013,.17);
+shape = follower(v,.012,.09);
+n = noise();
+air = bandpass(n,3100,2.4);
+swell = mul(air,shape);
+gated = gate(swell,.001,.007);
+dust = mul(gated,.24);
+direct = mul(v,.12);
+m = add(direct,dust);
+out(m);
