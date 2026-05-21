@@ -32,6 +32,7 @@ NSTextField* text(NSString* string, CGFloat size = 12, bool accent = false) {
 NSButton* button(NSString* title, id target, SEL action, NSString* key = @"") {
     auto* item = [NSButton buttonWithTitle:title target:target action:action];
     item.keyEquivalent = key;
+    item.appearance = [NSAppearance appearanceNamed:NSAppearanceNameAqua];
     return item;
 }
 
@@ -58,12 +59,16 @@ NSScrollView* scroll(NSView* view) {
 NSTextView* editor(bool editable) {
     auto* view = [[NSTextView alloc] initWithFrame:NSMakeRect(0,0,440,320)];
     view.font = [NSFont monospacedSystemFontOfSize:12 weight:NSFontWeightRegular];
+    view.backgroundColor = [NSColor colorWithSRGBRed:.09 green:.12 blue:.15 alpha:1];
+    view.textColor = [NSColor colorWithSRGBRed:.87 green:.91 blue:.94 alpha:1];
+    view.insertionPointColor = NSColor.systemTealColor;
     view.textContainerInset = NSMakeSize(10, 9);
     view.verticallyResizable = YES;
     view.horizontallyResizable = NO;
     view.textContainer.widthTracksTextView = YES;
     view.autoresizingMask = NSViewWidthSizable;
     view.richText = NO;
+    view.allowsUndo = editable;
     view.automaticQuoteSubstitutionEnabled = NO;
     view.automaticDashSubstitutionEnabled = NO;
     view.automaticSpellingCorrectionEnabled = NO;
@@ -107,6 +112,45 @@ std::uint64_t export_session(const Path& path, const Session& session, std::uint
     return timeline.frames;
 }
 }
+
+@interface RWorkbenchLayout : NSView
+@property(nonatomic, copy) NSArray<NSView*>* items;
+- (void)placeSubviews;
+@end
+
+@implementation RWorkbenchLayout
+- (void)drawRect:(NSRect)rect {
+    [[NSColor colorWithSRGBRed:.075 green:.09 blue:.12 alpha:1] setFill];
+    NSRectFill(NSIntersectionRect(self.bounds, rect));
+}
+- (void)setItems:(NSArray<NSView*>*)items {
+    _items = [items copy];
+    for (NSView* view in _items) [self addSubview:view];
+    [self placeSubviews];
+}
+
+- (void)setFrameSize:(NSSize)size {
+    [super setFrameSize:size];
+    [self placeSubviews];
+}
+
+- (void)placeSubviews {
+    if (_items.count != 8) return;
+    const auto width = NSWidth(self.bounds) - 26;
+    auto top = NSHeight(self.bounds) - 10;
+    for (NSUInteger i = 0; i < 3; ++i) {
+        top -= 29;
+        _items[i].frame = NSMakeRect(13, top, width, 29);
+        top -= 4;
+    }
+    NSSplitView* split = (NSSplitView*)_items[3];
+    split.frame = NSMakeRect(13, 188, width, std::max<CGFloat>(200, top - 188));
+    _items[4].frame = NSMakeRect(13, 81, width, 100);
+    _items[5].frame = NSMakeRect(13, 45, width, 29);
+    _items[6].frame = NSMakeRect(13, 25, width, 15);
+    _items[7].frame = NSMakeRect(13, 8, width, 15);
+}
+@end
 
 @interface RWorkbench : NSObject <NSApplicationDelegate, NSWindowDelegate, NSTextViewDelegate>
 - (instancetype)initWithInput:(NSString*)input smoke:(NSString*)smoke;
@@ -207,7 +251,7 @@ std::uint64_t export_session(const Path& path, const Session& session, std::uint
     [_output setAccessibilityLabel:@"Audio output device"];
     _level = [NSSlider sliderWithValue:0 minValue:0 maxValue:.2 target:self action:@selector(monitor:)];
     [_level setAccessibilityLabel:@"Monitor gain"];
-    minimum(_level, 80);
+    minimum(_level, 64);
     _tempo = [NSTextField textFieldWithString:@"120"];
     _tempo.target = self;
     _tempo.action = @selector(tempo:);
@@ -233,9 +277,12 @@ std::uint64_t export_session(const Path& path, const Session& session, std::uint
     _parameterValue = [NSSlider sliderWithValue:0 minValue:0 maxValue:1 target:self action:@selector(changeParameter:)];
     [_parameterValue setAccessibilityLabel:@"Parameter value"];
     minimum(_parameterValue, 90);
+    for (NSView* view in @[_rate, _output, _from, _to, _port, _parameter, _level, _parameterValue]) {
+        view.appearance = [NSAppearance appearanceNamed:NSAppearanceNameAqua];
+    }
 
     auto* brand = text(@"RESONANT", 17, true);
-    minimum(brand, 120);
+    minimum(brand, 99);
     auto* upper = row(@[brand, button(@"Open…", self, @selector(openSession:), @"o"),
         button(@"Save…", self, @selector(saveSession:), @"s"),
         button(@"Apply patch", self, @selector(applyPatch:), @"\r"), _audio, _rate, _output, text(@"Monitor"), _level]);
@@ -246,6 +293,7 @@ std::uint64_t export_session(const Path& path, const Session& session, std::uint
         button(@"Connect", self, @selector(connect:)), text(@"CONTROL", 10, true), _parameter, _parameterValue]);
 
     auto* tabs = [[NSTabView alloc] initWithFrame:NSMakeRect(0,0,480,340)];
+    tabs.appearance = [NSAppearance appearanceNamed:NSAppearanceNameAqua];
     auto* patchTab = [[NSTabViewItem alloc] initWithIdentifier:@"source"];
     patchTab.label = @"Patch source";
     patchTab.view = scroll(_source);
@@ -261,27 +309,11 @@ std::uint64_t export_session(const Path& path, const Session& session, std::uint
     [split addArrangedSubview:scroll(_graph)];
     [split addArrangedSubview:tabs];
 
-    NSView* base = _window.contentView;
-    auto* layout = [NSStackView stackViewWithViews:@[upper, transport, route, split, _scope, _keys, _metrics, _message]];
-    layout.orientation = NSUserInterfaceLayoutOrientationVertical;
-    layout.alignment = NSLayoutAttributeLeading;
-    layout.spacing = 7;
-    layout.translatesAutoresizingMaskIntoConstraints = NO;
-    [base addSubview:layout];
-    [NSLayoutConstraint activateConstraints:@[
-        [layout.leadingAnchor constraintEqualToAnchor:base.leadingAnchor constant:13],
-        [layout.trailingAnchor constraintEqualToAnchor:base.trailingAnchor constant:-13],
-        [layout.topAnchor constraintEqualToAnchor:base.topAnchor constant:11],
-        [layout.bottomAnchor constraintEqualToAnchor:base.bottomAnchor constant:-11],
-        [split.widthAnchor constraintEqualToAnchor:layout.widthAnchor],
-        [split.heightAnchor constraintGreaterThanOrEqualToConstant:200],
-        [_scope.widthAnchor constraintEqualToAnchor:layout.widthAnchor],
-        [_scope.heightAnchor constraintEqualToConstant:100],
-        [_keys.widthAnchor constraintEqualToAnchor:layout.widthAnchor],
-        [_keys.heightAnchor constraintEqualToConstant:29],
-        [_metrics.widthAnchor constraintEqualToAnchor:layout.widthAnchor],
-        [_message.widthAnchor constraintEqualToAnchor:layout.widthAnchor],
-    ]];
+    auto* layout = [[RWorkbenchLayout alloc] initWithFrame:_window.contentView.bounds];
+    layout.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+    _window.contentView = layout;
+    layout.items = @[upper, transport, route, split, _scope, _keys, _metrics, _message];
+    [split setHoldingPriority:NSLayoutPriorityDefaultLow+10 forSubviewAtIndex:0];
     [split setHoldingPriority:NSLayoutPriorityDefaultLow forSubviewAtIndex:1];
 
     __weak RWorkbench* weak = self;
@@ -732,6 +764,18 @@ std::uint64_t export_session(const Path& path, const Session& session, std::uint
     } catch (const std::exception& error) { std::cerr << error.what() << '\n'; std::exit(1); }
 }
 
+- (void)snapshot:(const Path&)path {
+    auto* view = _window.contentView;
+    [view layoutSubtreeIfNeeded];
+    [_window display];
+    const auto rect = view.bounds;
+    auto* bitmap = [view bitmapImageRepForCachingDisplayInRect:rect];
+    [view cacheDisplayInRect:rect toBitmapImageRep:bitmap];
+    auto* bytes = [bitmap representationUsingType:NSBitmapImageFileTypePNG properties:@{}];
+    if (bytes.length == 0) throw std::runtime_error("workbench snapshot failed");
+    atomic_write(path, {static_cast<const std::byte*>(bytes.bytes), bytes.length});
+}
+
 - (void)finishSmoke {
     try {
         if (!_engine || _engine->generation() != _generation || _generation < 2) {
@@ -741,6 +785,11 @@ std::uint64_t export_session(const Path& path, const Session& session, std::uint
         [self finishCapture];
         const Path dir(str(_smoke));
         std::filesystem::create_directories(dir);
+        [self snapshot:dir / "workbench.png"];
+        const auto normal = _window.contentView.bounds.size;
+        [_window setContentSize:_window.contentMinSize];
+        [self snapshot:dir / "workbench-compact.png"];
+        [_window setContentSize:normal];
         wave_output(dir / "capture.wav", _recorded, [self selectedRate]);
         const auto frames = _recorded.size() / 2;
         if (!std::ranges::any_of(_recorded, [](float sample) { return std::abs(sample) > .001F; })) {
@@ -775,14 +824,29 @@ std::uint64_t export_session(const Path& path, const Session& session, std::uint
 }
 @end
 
+@interface RApplication : NSApplication
+@property(nonatomic) BOOL smokeMode;
+@end
+
+@implementation RApplication
+- (void)reportException:(NSException*)exception {
+    if (self.smokeMode) {
+        std::cerr << "AppKit exception: " << str(exception.reason) << '\n';
+        std::exit(1);
+    }
+    [super reportException:exception];
+}
+@end
+
 int main(int argc, char** argv) {
     @autoreleasepool {
-        auto* app = NSApplication.sharedApplication;
+        RApplication* app = (RApplication*)RApplication.sharedApplication;
         [app setActivationPolicy:NSApplicationActivationPolicyRegular];
         NSString* input = nil;
         NSString* smoke = nil;
         if (argc == 3 && std::string_view(argv[1]) == "--smoke") smoke = ns(argv[2]);
         else if (argc == 2) input = ns(argv[1]);
+        app.smokeMode = smoke != nil;
         RWorkbench* delegate = [[RWorkbench alloc] initWithInput:input smoke:smoke];
         app.delegate = delegate;
         [app run];
