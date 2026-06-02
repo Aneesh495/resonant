@@ -72,3 +72,7 @@ realtime-audit: build
 
 stress: build
 	$(BUILD)/resonant_campaigns swap
+
+.PHONY: dsp-check
+dsp-check: build
+	python3 tools/measure_dsp.py "$(BIN)" out/dsp

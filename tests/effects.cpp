@@ -33,6 +33,12 @@ int main() {
     (void)warmer.render(samples);
     CHECK(std::abs(samples[1022] - (0.4F / 1.4F)) < 3e-6F && samples.back() == 0.2F);
 
+    const auto hq = compile("s=audio(.2); a=oversaturate_hq(s,2); b=align(s,112); out(a,b);");
+    CHECK(hq.program.latency()[0] == 112 && hq.program.latency()[1] == 112);
+    Vm hq_vm(hq.program, 48000);
+    (void)hq_vm.render(samples);
+    CHECK(std::abs(samples[1022] - (0.4F / 1.4F)) < 3e-6F && samples.back() == 0.2F);
+
     const auto room = compile("param click=0; x=audio(click); tank=room(x,.85,1); out(tank);");
     Vm tank(room.program, 48000);
     CHECK(tank.event({0, EventType::parameter, 0, 0, name_key("click"), 0.5F}));
