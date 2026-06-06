@@ -7,6 +7,7 @@
 #include <charconv>
 #include <chrono>
 #include <csignal>
+#include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <thread>
@@ -106,13 +107,19 @@ void list_devices() {
 }
 
 void device_run(std::span<char*> args) {
-    require_count(args, 2, 6);
+    require_count(args, 2, 7);
     const auto patch = read_patch(args[0]);
     const auto seconds = number<unsigned>(args[1], 1, 28800);
     const auto gain = args.size() >= 3 ? number<float>(args[2], 0, 0.2F) : 0.0F;
     const auto index = args.size() >= 4 ? number<int>(args[3], -1, 10000) : -1;
     const auto rate = args.size() >= 5 ? number<std::uint32_t>(args[4], 8000, 192000) : 48000U;
     const auto block = args.size() >= 6 ? number<std::uint32_t>(args[5], 1, max_block) : 128U;
+    std::ofstream trace_file;
+    if (args.size() == 7) {
+        trace_file.open(args[6], std::ios::out | std::ios::trunc);
+        if (!trace_file) throw std::runtime_error("cannot create device trace");
+        trace_file << "frame,frames,generation,ns,flags,voices,events,late,clipped,peak\n";
+    }
     Engine engine(patch.program, rate);
     for (std::uint8_t n = 24; n < 88; ++n) {
         if (engine.enqueue({0, EventType::note_on, 0, n, 0, 0.2F}) != Enqueue::accepted) {
@@ -133,6 +140,12 @@ void device_run(std::span<char*> args) {
     const auto collect = [&] {
         Trace trace;
         while (engine.poll(trace)) {
+            if (trace_file.is_open()) {
+                trace_file << trace.first_frame << ',' << trace.frames << ',' << trace.generation << ','
+                           << trace.duration_ns << ',' << trace.device_flags << ',' << trace.render.voices << ','
+                           << trace.applied_events << ',' << trace.late_events << ',' << trace.render.clipped << ','
+                           << trace.render.peak << '\n';
+            }
             ++callbacks;
             total_frames += trace.frames;
             max_voices = std::max(max_voices, trace.render.voices);
@@ -157,6 +170,10 @@ void device_run(std::span<char*> args) {
     device.close();
     const auto status = device.status();
     collect();
+    if (trace_file.is_open()) {
+        trace_file.close();
+        if (!trace_file) throw std::runtime_error("failed to commit device trace");
+    }
     const auto elapsed = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
     std::uint64_t running = 0;
     std::size_t bucket = 0;
@@ -183,9 +200,10 @@ void usage() {
               << "resonant inspect PATCH\n"
               << "resonant render SESSION WAVE [RATE [BLOCK [ENCODING [scalar|block]]]]\n"
               << "resonant render-patch PATCH WAVE FRAMES [RATE [BLOCK [ENCODING [scalar|block]]]]\n"
+              << "resonant schedule SESSION [RATE]\n"
               << "resonant wave-info WAVE\n"
               << "resonant devices\n"
-              << "resonant play PATCH SECONDS [GAIN [DEVICE [RATE [BLOCK]]]]\n"
+              << "resonant play PATCH SECONDS [GAIN [DEVICE [RATE [BLOCK [TRACE_CSV]]]]]\n"
               << "resonant doctor\n";
 }
 
@@ -224,6 +242,17 @@ void command(std::string_view mode, std::span<char*> args) {
             if (frames > 1) timeline.events.push_back({3 * frames / 4, EventType::note_off, 0, 69});
             const auto source = read_text(args[0], max_source_bytes);
             export_audio(compile(source).program, timeline, args[1], rate, block, format, name_key(source), execution);
+        }
+    } else if (mode == "schedule") {
+        require_count(args, 1, 2);
+        const auto session = parse_session(read_text(args[0], max_session_bytes));
+        const auto rate = args.size() == 2 ? number<std::uint32_t>(args[1], 8000, 192000) : 48000U;
+        const auto timeline = schedule(session, rate);
+        std::cout << "frames," << timeline.frames << '\n' << std::setprecision(std::numeric_limits<float>::max_digits10);
+        for (const auto& event : timeline.events) {
+            std::cout << event.frame << ',' << static_cast<unsigned>(event.type) << ','
+                      << static_cast<unsigned>(event.channel) << ',' << static_cast<unsigned>(event.note) << ','
+                      << event.key << ',' << event.value << ',' << event.ramp << '\n';
         }
     } else if (mode == "wave-info") {
         require_count(args, 1, 1);
