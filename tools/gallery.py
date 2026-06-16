@@ -10,7 +10,8 @@ import wave
 
 
 def digest(path):
-    return hashlib.file_digest(path.open("rb"), "sha256").hexdigest()
+    with path.open("rb") as data:
+        return hashlib.file_digest(data, "sha256").hexdigest()
 
 
 def invoke(executable, *args):
@@ -57,7 +58,8 @@ def build(executable, output):
             row["wave"] = str(output_wave.relative_to(output))
             row["wave_sha256"] = digest(output_wave)
             manifest.append(row)
-    if sum(x["source"].startswith("patches/") for x in manifest) < 20 or len(manifest) < 26:
+    if (sum(x["source"].startswith("patches/") for x in manifest) < 20 or
+            sum(x["source"].startswith("compositions/") for x in manifest) != 6):
         raise ValueError("gallery is missing required patch or score sources")
     (output / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
     print(f"{len(manifest)} rendered and independently checked WAVE files in {output}")

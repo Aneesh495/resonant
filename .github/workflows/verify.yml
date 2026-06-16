@@ -1,0 +1,37 @@
+name: Verify
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verify-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  diagnostic:
+    timeout-minutes: 18
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - run: make build CMAKE_ARGS=-DRESONANT_DEVICE=OFF
+      - run: make docs
+      - run: make acceptance PROFILE=diagnostic RUN_ID=hosted
+      - run: make verify RUN_ID=hosted
+      - run: make negative-controls RUN_ID=hosted
+      - run: make release
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        if: always()
+        with:
+          name: resonant-diagnostic-${{ matrix.os }}
+          path: |
+            evidence/
+            out/stage/
+          retention-days: 14
