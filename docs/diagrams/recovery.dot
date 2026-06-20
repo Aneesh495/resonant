@@ -1,0 +1,13 @@
+digraph resonant {
+  rankdir=LR;
+  bgcolor="#101820";
+  label="Failure and recovery";
+  labelloc=t; fontcolor="#d9e7ec"; fontname="Helvetica";
+  node [shape=box style="rounded,filled" fillcolor="#1e303d" color="#426474" fontcolor="#d9e7ec" fontname="Helvetica"];
+  edge [color="#55baad" fontcolor="#acc3ce" fontname="Helvetica" fontsize=10];
+  "Apply requested edit" -> "Compile and verify" [label="check source and operands"];
+  "Compile and verify" -> "Keep active package" [label="diagnostic on failure"];
+  "Compile and verify" -> "Publish replacement" [label="on success"];
+  "Audio device stops" -> "Stop and reclaim" [label="control thread"];
+  "Stop and reclaim" -> "Open muted output" [label="explicit reconfigure"];
+}

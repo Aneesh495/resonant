@@ -101,3 +101,7 @@ bench: build
 
 release: test demo
 	$(CMAKE) --install "$(BUILD)" --prefix "$(STAGE)"
+
+.PHONY: docs
+docs:
+	python3 tools/check_docs.py

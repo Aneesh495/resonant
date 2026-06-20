@@ -1,0 +1,13 @@
+digraph resonant {
+  rankdir=LR;
+  bgcolor="#101820";
+  label="System context";
+  labelloc=t; fontcolor="#d9e7ec"; fontname="Helvetica";
+  node [shape=box style="rounded,filled" fillcolor="#1e303d" color="#426474" fontcolor="#d9e7ec" fontname="Helvetica"];
+  edge [color="#55baad" fontcolor="#acc3ce" fontname="Helvetica" fontsize=10];
+  "Player" -> "AppKit workbench" [label="notes and edits"];
+  "AppKit workbench" -> "Resonant" [label="verified patches"];
+  "Score file" -> "Resonant" [label="tempo and automation"];
+  "Resonant" -> "Core Audio" [label="stereo callbacks"];
+  "Resonant" -> "WAVE export" [label="offline PCM"];
+}

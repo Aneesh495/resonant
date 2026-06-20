@@ -1,0 +1,14 @@
+digraph resonant {
+  rankdir=LR;
+  bgcolor="#101820";
+  label="Build and verification";
+  labelloc=t; fontcolor="#d9e7ec"; fontname="Helvetica";
+  node [shape=box style="rounded,filled" fillcolor="#1e303d" color="#426474" fontcolor="#d9e7ec" fontname="Helvetica"];
+  edge [color="#55baad" fontcolor="#acc3ce" fontname="Helvetica" fontsize=10];
+  "Git commit" -> "Linux CI" [label="offline CLI"];
+  "Git commit" -> "macOS CI" [label="offline CLI and AppKit"];
+  "Linux CI" -> "Diagnostic bundle" [label="tests and replay"];
+  "macOS CI" -> "Diagnostic bundle" [label="tests and replay"];
+  "Clean macOS checkout" -> "Local device diagnostic" [label="real stereo output"];
+  "Diagnostic bundle" -> "Install package" [label="staged binaries and examples"];
+}
