@@ -57,6 +57,11 @@ int main() {
     const std::array extremes{-2.0, 2.0, std::numeric_limits<double>::quiet_NaN(), 0x1p-16, -0x1p-16};
     const auto clipped = encode_wave(extremes, {Encoding::pcm16, 48000, 1, 0});
     CHECK(map_channels(parse_wave(clipped), 1) == std::vector<double>({-1,1-0x1p-15,0,0x1p-15,-0x1p-15}));
+    const auto tagged = encode_wave(extremes, {Encoding::pcm16, 48000, 1, 0, "take A"});
+    CHECK(parse_wave(tagged).frames() == extremes.size());
+    const std::string_view tag(reinterpret_cast<const char*>(tagged.data()), tagged.size());
+    CHECK(tag.find("LIST") != tag.npos && tag.find("INFOICMT") != tag.npos && tag.find("take A") != tag.npos);
+
     const std::vector<double> silence(100000, 0.0);
     const auto dithered = encode_wave(silence, {Encoding::pcm16, 48000, 1, 991});
     const auto dither = parse_wave(dithered);
