@@ -1,6 +1,6 @@
 #include "resonant/graph.hpp"
 
-#include <charconv>
+#include "decimal.hpp"
 #include <cmath>
 #include <utility>
 
@@ -95,13 +95,11 @@ private:
 float number(Token token) {
     auto text = token.text;
     if (text.starts_with('+')) text.remove_prefix(1);
-    float value{};
-    const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), value);
-    if (error != std::errc{} || end != text.data() + text.size() || !std::isfinite(value) ||
-        std::abs(value) > signal_limit) {
+    const auto value = decimal<float>(text);
+    if (!value || std::abs(*value) > signal_limit) {
         throw Diagnostic(token.span, "expected a finite numeric literal within the signal range");
     }
-    return value;
+    return *value;
 }
 
 class Parser {

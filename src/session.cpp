@@ -3,7 +3,7 @@
 #include "resonant/graph.hpp"
 
 #include <algorithm>
-#include <charconv>
+#include "decimal.hpp"
 #include <cmath>
 #include <iomanip>
 #include <limits>
@@ -87,10 +87,9 @@ Fields split(std::string_view text) {
 
 template<class T>
 T number(std::string_view field) {
-    T value{};
-    const auto [end, error] = std::from_chars(field.data(), field.data() + field.size(), value);
-    check(error == std::errc{} && end == field.data() + field.size(), "invalid numeric session field");
-    return value;
+    const auto value = decimal<T>(field);
+    check(value.has_value(), "invalid numeric session field");
+    return *value;
 }
 
 int priority(EventType type) {
