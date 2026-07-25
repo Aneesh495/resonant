@@ -117,3 +117,8 @@ fuzz:
 	printf '\001a=audio(.1);out(a);' > out/fuzz-corpus/source
 	printf '\003resonant-session 2\nlength 10\ntempo 0 500000\nsource\na=audio(.1);out(a);' > out/fuzz-corpus/session
 	"$(FUZZ_BUILD)/resonant_fuzz" -runs=20000 -max_len=4096 -timeout=2 -seed=20739 out/fuzz-corpus
+
+
+.PHONY: midi-smoke
+midi-smoke: build
+	"$(BUILD)/test_core_midi"

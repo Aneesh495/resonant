@@ -96,6 +96,7 @@ int priority(EventType type) {
     switch (type) {
     case EventType::panic: return 0;
     case EventType::all_off:
+    case EventType::all_sound_off:
     case EventType::note_off: return 1;
     case EventType::sustain: return 2;
     case EventType::parameter: return 3;

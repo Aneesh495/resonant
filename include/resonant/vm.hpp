@@ -7,7 +7,7 @@
 namespace resonant {
 enum class Execution { scalar, block };
 
-enum class EventType : std::uint8_t { parameter, note_on, note_off, sustain, all_off, panic };
+enum class EventType : std::uint8_t { parameter, note_on, note_off, sustain, all_off, panic, all_sound_off };
 
 struct Event {
     std::uint64_t frame{};

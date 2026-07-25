@@ -1,5 +1,7 @@
 #import "views.hpp"
 
+#include "midi_input.hpp"
+
 #include "resonant/device.hpp"
 #include "resonant/session.hpp"
 #include "resonant/wave.hpp"
@@ -8,6 +10,7 @@
 #include <cmath>
 #include <iostream>
 #include <sstream>
+#include <mach/mach_time.h>
 
 namespace {
 void control_surface(NSControl* control, NSString* title, bool primary, bool popup) {
@@ -232,7 +235,7 @@ std::uint64_t export_session(const Path& path, const Session& session, std::uint
 }
 @end
 
-@interface RWorkbench : NSObject <NSApplicationDelegate, NSWindowDelegate, NSTextViewDelegate>
+@interface RWorkbench : NSObject <NSApplicationDelegate, NSWindowDelegate, NSTextViewDelegate, NSMenuDelegate>
 - (instancetype)initWithInput:(NSString*)input smoke:(NSString*)smoke;
 @end
 
@@ -254,17 +257,27 @@ std::uint64_t export_session(const Path& path, const Session& session, std::uint
     NSPopUpButton* _parameter;
     NSPopUpButton* _rate;
     NSPopUpButton* _output;
+    NSPopUpButton* _midiMenu;
     RGraphView* _graph;
     RScopeView* _scope;
     RKeysView* _keys;
     NSString* _input;
     NSString* _smoke;
     NSTimer* _timer;
+    NSTimer* _eventTimer;
     Session _session;
     std::unique_ptr<Compilation> _compiled;
     std::unique_ptr<Engine> _engine;
     std::unique_ptr<Device> _device;
     std::vector<int> _devices;
+    std::unique_ptr<apple::MidiInput> _midi;
+    std::uint32_t _midiEndpoint;
+    std::uint64_t _midiStarted;
+    std::uint64_t _midiLost;
+    std::uint64_t _midiAdjusted;
+    std::uint64_t _midiInboxLost;
+    std::vector<Event> _midiPending;
+    double _midiSecondsPerTick;
     Timeline _timeline;
     std::size_t _scoreIndex;
     std::uint64_t _scoreBase;
@@ -329,6 +342,12 @@ std::uint64_t export_session(const Path& path, const Session& session, std::uint
     _output.target = self;
     _output.action = @selector(reconfigure:);
     [_output setAccessibilityLabel:@"Audio output device"];
+    _midiMenu = [[RPopup alloc] initWithFrame:NSZeroRect pullsDown:NO];
+    [_midiMenu addItemWithTitle:@"MIDI Off"];
+    _midiMenu.menu.delegate = self;
+    _midiMenu.target = self;
+    _midiMenu.action = @selector(selectMidi:);
+    [_midiMenu setAccessibilityLabel:@"MIDI input source"];
     _level = [NSSlider sliderWithValue:0 minValue:0 maxValue:.2 target:self action:@selector(monitor:)];
     [_level setAccessibilityLabel:@"Monitor gain"];
     minimum(_level, 64);
@@ -364,7 +383,7 @@ std::uint64_t export_session(const Path& path, const Session& session, std::uint
         button(@"Apply patch", self, @selector(applyPatch:), @"\r"), _audio, _rate, _output, text(@"Monitor"), _level]);
     auto* transport = row(@[button(@"Play score", self, @selector(playScore:)),
         button(@"Stop", self, @selector(stopScore:)), text(@"BPM"), _tempo,
-        _record, _export, button(@"Focus keys", self, @selector(focusKeys:))]);
+        _record, _export, button(@"Focus keys", self, @selector(focusKeys:)), _midiMenu]);
     auto* route = row(@[text(@"ROUTE", 10, true), _from, text(@"→"), _to, _port,
         button(@"Connect", self, @selector(connect:)), text(@"CONTROL", 10, true), _parameter, _parameterValue]);
 
@@ -537,8 +556,18 @@ std::uint64_t export_session(const Path& path, const Session& session, std::uint
     if (!_compiled || !_device) throw std::runtime_error("verified patch and PortAudio are required");
     auto next = std::make_unique<Engine>(_compiled->program, [self selectedRate]);
     const auto index = static_cast<std::size_t>(_output.indexOfSelectedItem);
-    _device->open(*next, {_devices.at(index), 128});
+    _device->open(*next, {_devices.at(index), 128, true});
+    _midiStarted = mach_absolute_time();
     _engine = std::move(next);
+    _midiPending.reserve(512);
+    if (_midi) {
+        Event discarded;
+        for (unsigned i = 0; i < 512 && _midi->poll(discarded); ++i) {}
+        _midiInboxLost = _midi->dropped();
+    }
+    _eventTimer = [NSTimer timerWithTimeInterval:.004 target:self selector:@selector(pumpEvents:)
+                                        userInfo:nil repeats:YES];
+    [[NSRunLoop mainRunLoop] addTimer:_eventTimer forMode:NSRunLoopCommonModes];
     _lastEvent = 0;
     _generation = 1;
     _underruns = 0;
@@ -555,6 +584,9 @@ std::uint64_t export_session(const Path& path, const Session& session, std::uint
         _record.title = @"Record";
     }
     _scorePlaying = false;
+    _midiPending.clear();
+    [_eventTimer invalidate];
+    _eventTimer = nil;
     [_keys releaseNotes];
     if (_device) _device->close();
     _engine.reset();
@@ -581,6 +613,118 @@ std::uint64_t export_session(const Path& path, const Session& session, std::uint
 - (void)monitor:(id)sender {
     (void)sender;
     if (_engine) _device->gain(_level.floatValue);
+}
+
+- (void)menuNeedsUpdate:(NSMenu*)menu {
+    if (menu != _midiMenu.menu) return;
+    const auto sources = apple::MidiInput::sources();
+    [_midiMenu removeAllItems];
+    [_midiMenu addItemWithTitle:@"MIDI Off"];
+    for (const auto& source : sources) {
+        NSString* title = ns(source.name);
+        if ([_midiMenu itemWithTitle:title] != nil) title = [title stringByAppendingFormat:@" (%u)", source.endpoint];
+        [_midiMenu addItemWithTitle:title];
+        [_midiMenu itemWithTitle:title].tag = source.endpoint;
+    }
+    [_midiMenu selectItemWithTag:_midiEndpoint];
+    if (_midiEndpoint != 0 && _midiMenu.selectedItem.tag != _midiEndpoint) {
+        [_midiMenu selectItemAtIndex:0];
+        [self selectMidi:nil];
+        [self message:"MIDI source disconnected" error:true];
+    }
+}
+
+- (void)selectMidi:(id)sender {
+    (void)sender;
+    const auto selected = static_cast<std::uint32_t>(_midiMenu.selectedItem.tag);
+    if (selected == _midiEndpoint) return;
+    if (_midiEndpoint != 0) [self stopScore:nil];
+    if (_midi) _midi->disconnect();
+    _midiEndpoint = 0;
+    try {
+        if (selected == 0) {
+            [self message:"MIDI input off" error:false];
+            return;
+        }
+        if (!_midi) _midi = std::make_unique<apple::MidiInput>();
+        _midiSecondsPerTick = apple::host_seconds_per_tick();
+        if (_midiSecondsPerTick <= 0) throw std::runtime_error("host clock is unavailable");
+        _midi->connect(selected);
+        _midiEndpoint = selected;
+        _midiInboxLost = 0;
+        [self message:"MIDI 1.0 input connected" error:false];
+    } catch (const std::exception& error) {
+        [_midiMenu selectItemAtIndex:0];
+        [self message:error.what() error:true];
+    }
+}
+
+- (void)readMidiAt:(std::uint64_t)cursor {
+    if (_midiEndpoint == 0) return;
+    const auto lost = _midi->dropped();
+    if (lost != _midiInboxLost) {
+        _midiLost += lost - _midiInboxLost;
+        _midiInboxLost = lost;
+        Event discarded;
+        for (unsigned i = 0; i < 512 && _midi->poll(discarded); ++i) {}
+        [self stopScore:nil];
+        [self message:"MIDI input overflow. Transport cleared to prevent stuck notes." error:true];
+        return;
+    }
+    const auto anchor = _device->clock_anchor();
+    if (!anchor) return;
+    const auto rate = _engine->sample_rate();
+    Event event;
+    bool added = false;
+    for (unsigned i = 0; i < 128 && _midi->poll(event); ++i) {
+        if (event.frame < _midiStarted) continue;
+        if (_midiPending.size() == 512) {
+            ++_midiLost;
+            [self stopScore:nil];
+            [self message:"MIDI scheduling queue overflow. Transport cleared." error:true];
+            return;
+        }
+        const auto frame = map_host_frame(*anchor, event.frame, _midiSecondsPerTick, rate,
+                                          cursor + anchor->block, rate / 4, rate / 100);
+        _midiAdjusted += frame.adjustment != ClockAdjustment::exact;
+        event.frame = frame.frame;
+        _midiPending.push_back(event);
+        added = true;
+    }
+    if (added) std::stable_sort(_midiPending.begin(), _midiPending.end(),
+                                [](const auto& a, const auto& b) { return a.frame < b.frame; });
+}
+
+- (void)pumpEvents:(NSTimer*)timer {
+    (void)timer;
+    if (!_engine || _engine->cancellation_pending()) return;
+    const auto cursor = _engine->clock();
+    [self readMidiAt:cursor];
+    if (_engine->cancellation_pending()) return;
+    const auto horizon = cursor + _engine->sample_rate() / (_midiEndpoint == 0 ? 20U : 100U);
+    std::size_t consumed = 0;
+    for (unsigned i = 0; i < 128; ++i) {
+        const auto* midi = consumed < _midiPending.size() ? &_midiPending[consumed] : nullptr;
+        const auto* score = _scorePlaying && _scoreIndex < _timeline.events.size() ? &_timeline.events[_scoreIndex] : nullptr;
+        const auto score_frame = score ? _scoreBase + score->frame : UINT64_MAX;
+        const bool use_midi = midi && midi->frame < score_frame;
+        const auto frame = use_midi ? midi->frame : score_frame;
+        if (frame >= horizon) break;
+        auto event = use_midi ? *midi : *score;
+        event.frame = std::max(frame, _lastEvent);
+        if (use_midi && event.frame != frame) ++_midiAdjusted;
+        if (_engine->enqueue(event) != Enqueue::accepted) {
+            if (use_midi) ++_midiLost;
+            [self stopScore:nil];
+            [self message:"Event queue rejected input. Transport cleared." error:true];
+            return;
+        }
+        _lastEvent = event.frame;
+        if (use_midi) ++consumed;
+        else ++_scoreIndex;
+    }
+    _midiPending.erase(_midiPending.begin(), _midiPending.begin() + static_cast<std::ptrdiff_t>(consumed));
+    if (_scorePlaying && cursor >= _scoreBase + _timeline.frames) [self stopScore:nil];
 }
 
 - (bool)submit:(Event)event {
@@ -641,6 +785,7 @@ std::uint64_t export_session(const Path& path, const Session& session, std::uint
 - (void)stopScore:(id)sender {
     (void)sender;
     _scorePlaying = false;
+    _midiPending.clear();
     if (_engine) _engine->cancel_events();
     _lastEvent = 0;
 }
@@ -784,25 +929,16 @@ std::uint64_t export_session(const Path& path, const Session& session, std::uint
         [_scope pushTrace:trace rate:_engine->sample_rate()];
     }
     if (_recording) [self drainCapture];
-    if (_scorePlaying && !_engine->cancellation_pending()) {
-        const auto cursor = _engine->clock();
-        const auto horizon = cursor + _engine->sample_rate() / 20;
-        while (_scoreIndex < _timeline.events.size()) {
-            auto event = _timeline.events[_scoreIndex];
-            event.frame += _scoreBase;
-            if (event.frame >= horizon) break;
-            event.frame = std::max(event.frame, _lastEvent);
-            if (_engine->enqueue(event) != Enqueue::accepted) {
-                [self message:"Score transport stopped after event queue rejection" error:true];
-                [self stopScore:nil];
-                break;
-            }
-            _lastEvent = event.frame;
-            ++_scoreIndex;
-        }
-        if (cursor >= _scoreBase + _timeline.frames) [self stopScore:nil];
-    }
+    (void)_device->clock_anchor();
     if (++_pollCount % 10 == 0) {
+        if (_midiEndpoint != 0) {
+            const auto sources = apple::MidiInput::sources();
+            if (std::ranges::none_of(sources, [&](const auto& source) { return source.endpoint == _midiEndpoint; })) {
+                [_midiMenu selectItemAtIndex:0];
+                [self selectMidi:nil];
+                [self message:"MIDI source disconnected" error:true];
+            }
+        }
         try {
             const auto state = _device->status();
             _underruns = state.underflows;
@@ -812,6 +948,11 @@ std::uint64_t export_session(const Path& path, const Session& session, std::uint
             [self message:error.what() error:true];
             return;
         }
+    }
+    if (_midiEndpoint != 0) {
+        _midiMenu.toolTip = [NSString stringWithFormat:@"MIDI dropped %llu, adjusted %llu",
+                             static_cast<unsigned long long>(_midiLost),
+                             static_cast<unsigned long long>(_midiAdjusted)];
     }
     [self updateMetrics];
 }
@@ -887,6 +1028,7 @@ std::uint64_t export_session(const Path& path, const Session& session, std::uint
 - (void)applicationWillTerminate:(NSNotification*)notice {
     (void)notice;
     [_timer invalidate];
+    if (_midi) _midi->disconnect();
     if (_cancelExport) _cancelExport->store(true);
     [self stopAudio];
 }
