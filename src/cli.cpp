@@ -83,12 +83,8 @@ void export_audio(const VerifiedProgram& program, const Timeline& timeline, cons
                   Execution execution) {
     const auto render = render_offline(program, timeline, rate, block, execution);
     const std::vector<double> samples(render.samples.begin(), render.samples.end());
-    const auto code = encode(program);
-    const auto code_id = name_key({reinterpret_cast<const char*>(code.data()), code.size()});
-    std::ostringstream comment;
-    comment << "Resonant frames=" << timeline.frames << " source_id=" << std::hex << source_id
-            << " program_id=" << code_id;
-    const auto identity = comment.str();
+    const auto code_id = program_key(program);
+    const auto identity = render_comment(timeline.frames, source_id, code_id);
     atomic_write(path, encode_wave(samples, {format, rate, 2, 0, identity}));
     std::cout << "frames=" << timeline.frames << " rate=" << rate << " block=" << block
               << " events=" << timeline.events.size() << " instructions=" << render.instructions

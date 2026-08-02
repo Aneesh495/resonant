@@ -237,6 +237,11 @@ std::vector<std::byte> encode(const VerifiedProgram& checked) {
     return bytes;
 }
 
+std::uint64_t program_key(const VerifiedProgram& program) {
+    const auto bytes = encode(program);
+    return name_key({reinterpret_cast<const char*>(bytes.data()), bytes.size()});
+}
+
 VerifiedProgram decode(std::span<const std::byte> bytes) {
     using binary::read;
     require(read<std::uint32_t>(bytes, 0) == magic, "invalid bytecode magic");

@@ -93,5 +93,6 @@ private:
 
 [[nodiscard]] VerifiedProgram verify(Program program);
 [[nodiscard]] std::vector<std::byte> encode(const VerifiedProgram& program);
+[[nodiscard]] std::uint64_t program_key(const VerifiedProgram& program);
 [[nodiscard]] VerifiedProgram decode(std::span<const std::byte> bytes);
 }
