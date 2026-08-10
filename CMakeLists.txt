@@ -62,6 +62,7 @@ install(TARGETS resonant RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 
 resonant_test(spectral)
 resonant_test(effects)
+resonant_test(numerical)
 
 option(RESONANT_WORKBENCH "Build the native AppKit workbench on macOS" ON)
 if(APPLE AND RESONANT_WORKBENCH)
