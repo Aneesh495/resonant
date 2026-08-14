@@ -262,7 +262,7 @@ void command(std::string_view mode, std::span<char*> args) {
         list_devices();
     } else if (mode == "doctor") {
         require_count(args, 0, 0);
-        std::cout << "simd=" << simd_available() << " portaudio=" << Device::built()
+        std::cout << "simd=" << simd_available() << " float_mode=" << float_mode_available() << " portaudio=" << Device::built()
                   << " hardware_threads=" << std::thread::hardware_concurrency() << " binary32="
                   << std::numeric_limits<float>::is_iec559 << '\n';
         if (Device::built()) list_devices();

@@ -3,7 +3,9 @@
 #include "test.hpp"
 
 #include <algorithm>
+#include <cfenv>
 #include <cmath>
+#include <limits>
 #include <complex>
 #include <numbers>
 #include <string>
@@ -115,6 +117,27 @@ void check_cutoff_sweep() {
         for (const auto v : output) CHECK(std::isfinite(v) && std::abs(v) < .1F);
     }
 }
+
+void check_floating_mode() {
+    if (!float_mode_available()) return;
+    const auto patch = compile("param p=.15; n=sine(1234); m=mul(n,p); v=lowpass(m,2424,.71); out(v);");
+    Engine normal(patch.program, 48000);
+    Engine altered(patch.program, 48000);
+    const Event ramp{13, EventType::parameter, 0, 0, name_key("p"), .72345F, 113};
+    const Event subnormal{203, EventType::parameter, 0, 0, name_key("p"), std::numeric_limits<float>::denorm_min()};
+    CHECK(normal.enqueue(ramp) == Enqueue::accepted && altered.enqueue(ramp) == Enqueue::accepted);
+    CHECK(normal.enqueue(subnormal) == Enqueue::accepted && altered.enqueue(subnormal) == Enqueue::accepted);
+    std::array<float, 512> a{}, b{};
+    const auto saved = std::fegetround();
+    CHECK(saved != -1 && std::fesetround(FE_TONEAREST) == 0);
+    normal.render(a);
+    CHECK(std::fesetround(FE_UPWARD) == 0);
+    altered.render(b);
+    const auto restored = std::fegetround();
+    CHECK(std::fesetround(saved) == 0);
+    CHECK(restored == FE_UPWARD && a == b);
+}
+
 }
 
 int main() {
@@ -125,6 +148,7 @@ int main() {
         check_envelopes(rate);
     }
     check_cutoff_sweep();
+    check_floating_mode();
     const auto reduction = 20 * std::log10(largest_jump(0) / largest_jump(64));
     CHECK(std::abs(reduction - 36.12359948) < 1e-6);
     std::cout << "27 complex filter responses and follower, compressor, gate steps at three rates\n"

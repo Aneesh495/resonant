@@ -21,6 +21,7 @@ struct Event {
 
 [[nodiscard]] bool valid_event(const Event& event) noexcept;
 [[nodiscard]] bool simd_available() noexcept;
+[[nodiscard]] bool float_mode_available() noexcept;
 
 struct RenderStats {
     std::uint64_t instructions{};
