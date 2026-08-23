@@ -28,3 +28,5 @@ Keep the v1 rates, bins, drive, threshold and source waveform. Preserve all v1 b
 ## Spectral protocol v3
 
 Retain the v2 inputs and decisions. The high-quality implementation replaces the last decimation stage with a 129-tap guard-band low-pass at 0.225 cycles per intermediate-rate sample. This sacrifices part of the upper passband to reject harmonics immediately beyond native Nyquist. The [v2 pilot](results/spectral-pilot-v2.csv) retains the results from the half-band-only design.
+
+The bytecode diagnostic also covers 50,000 mixed delay and alignment programs from seed 0x543210. Accepted cases must match independent state and work counts and survive serialization. Selected programs must produce the expected stereo arrival times. Invalid cases target shared state keys, delay ownership, register aliasing, rate errors, and epilogue placement. Separate fixtures cross the aggregate state and instruction-work budgets.
