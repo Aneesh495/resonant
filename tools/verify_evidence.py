@@ -99,11 +99,15 @@ def verify_source(root, repo, expected):
     return actual, trusted
 
 
-def fnv(name):
+def fnv_bytes(data):
     state = 0xCBF29CE484222325
-    for byte in name.encode("ascii"):
+    for byte in data:
         state = ((state ^ byte) * 0x100000001B3) & ((1 << 64) - 1)
     return state
+
+
+def fnv(name):
+    return fnv_bytes(name.encode("ascii"))
 
 
 def reference_timeline(session, rate):
@@ -303,6 +307,75 @@ def check_device(root):
     return {"callbacks": len(durations), "frames": frames, "p999_ns": p999, "flag_mask": flags, "voices": voices}
 
 
+def wave_comment(path):
+    data = path.read_bytes()
+    tag, size, kind = struct.unpack_from("<4sI4s", data)
+    require((tag, size + 8, kind) == (b"RIFF", len(data), b"WAVE"), "workbench RIFF extent differs")
+    found = []
+
+    def chunks(start, end):
+        while start < end:
+            name, size = struct.unpack_from("<4sI", data, start)
+            body = start + 8
+            start = body + size + (size & 1)
+            require(start <= end, "workbench RIFF chunk is truncated")
+            yield name, body, size
+
+    for name, start, size in chunks(12, len(data)):
+        if name == b"LIST" and data[start:start+4] == b"INFO":
+            for child, body, width in chunks(start + 4, start + size):
+                if child == b"ICMT":
+                    value = data[body:body+width]
+                    require(value.endswith(b"\0"), "workbench comment is not terminated")
+                    found.append(value[:-1].decode("ascii"))
+    require(len(found) == 1, "workbench requires one provenance comment")
+    fields = found[0].split()
+    require(fields[0] == "Resonant", "unexpected workbench comment producer")
+    return pairs(word.split("=", 1) for word in fields[1:] if "=" in word)
+
+
+def check_workbench(root, repo, commit, engine):
+    folder = root / "workbench"
+    receipt = dict(row.split("=", 1) for row in (folder / "workbench.txt").read_text().splitlines())
+    frames = int(receipt["recorded_frames"])
+    exported = int(receipt["exported_frames"])
+    require(int(receipt["activated_generation"]) >= 2 and 0 < frames < 48000 and 0 < exported < 300000,
+            "workbench smoke did not activate a live edit or used unexpected frame counts")
+    capture = folder / "capture.wav"
+    require(any(pcm24(capture, 48000, frames)), "workbench capture was silent")
+    capture_info = wave_comment(capture)
+    require(int(capture_info["frames"]) == frames, "capture metadata frame count differs from PCM")
+    require(int(capture_info["first_frame"]) >= 0 and re.fullmatch(r"[0-9a-f]{1,16}", capture_info["lineage_id"]),
+            "workbench capture lineage is invalid")
+    audio = folder / "export.wav"
+    raw = pcm24(audio, 48000, exported)
+    score = (folder / "edited.rsn").read_bytes()
+    info = wave_comment(audio)
+    require(info["frames"] == str(exported) and info["source_id"] == format(fnv_bytes(score), "x"),
+            "workbench export source identity differs")
+    require(any(raw), "workbench export was silent")
+    starter = command(["git", "show", f"{commit}:compositions/ember-motif.rsn"], repo)
+    with tempfile.TemporaryDirectory(prefix="resonant-workbench-replay-") as directory:
+        out = Path(directory)
+        identities = []
+        for session in (starter, score):
+            patch = out / "patch.rpatch"
+            patch.write_bytes(session.split(b"\nsource\n", 1)[1])
+            command([engine, "compile", patch, out / "patch.rbsc"])
+            identities.append(format(fnv_bytes((out / "patch.rbsc").read_bytes()), "x"))
+        require(info["program_id"] == identities[1], "workbench export program identity differs")
+        require(identities[0] != identities[1] and capture_info["first_program_id"] == identities[0] and
+                capture_info["last_program_id"] == identities[1], "workbench capture did not identify the real live edit")
+        command([engine, "render", folder / "edited.rsn", out / "replayed.wav", 48000, 128])
+        require((out / "replayed.wav").read_bytes() == audio.read_bytes(), "workbench export replay differs")
+    midi = (root / "logs/midi_device.txt").read_text()
+    match = re.search(r"on_frame=(\d+) first_nonzero=(\d+) off_frame=(\d+) applied=2 late=0 dropped=0", midi)
+    require(match is not None, "live MIDI diagnostic observations missing")
+    on, first, off = map(int, match.groups())
+    require(first == on + 1 and off == on + 2880, "live MIDI diagnostic sample offsets differ")
+    return {"recorded_frames": frames, "exported_frames": exported, "midi_note_spacing_frames": off - on}
+
+
 def check_gallery(root, trusted):
     rows = document(root / "gallery/manifest.json")
     patches = set()
@@ -360,6 +433,9 @@ def verify(root, repo, expected, engine):
               "spectral_worst_dbc": check_spectral(root)}
     if report["device_requested"]:
         result["device"] = check_device(root)
+    if report.get("workbench_requested", False):
+        require(report["device_requested"], "workbench diagnostic requires the device profile")
+        result["workbench"] = check_workbench(root, repo, commit, engine)
     if report["gallery_requested"]:
         result["gallery"] = check_gallery(root, trusted)
     recorded = [json.loads(line) for line in (root / "COMMANDS.jsonl").read_text().splitlines()]

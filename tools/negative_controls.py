@@ -60,6 +60,26 @@ def missing(root):
     (root / "probe/audio.wav").unlink()
 
 
+def capture_count(root):
+    path = root / "workbench/capture.wav"
+    data = path.read_bytes()
+    count = re.search(rb"Resonant capture frames=(\d+)", data)
+    if not count:
+        raise ValueError("capture metadata unavailable")
+    data = data[:count.start(1)] + b"9" * len(count[1]) + data[count.end(1):]
+    path.write_bytes(data)
+
+
+def export_program(root):
+    path = root / "workbench/export.wav"
+    data = path.read_bytes()
+    tag = re.search(rb" program_id=([0-9a-f]+)\0", data)
+    if not tag:
+        raise ValueError("export metadata unavailable")
+    data = data[:tag.start(1)] + b"0" * len(tag[1]) + data[tag.end(1):]
+    path.write_bytes(data)
+
+
 def exercise(bundle, executable, output):
     verifier = [sys.executable, "tools/verify_evidence.py"]
     cases = [
@@ -72,6 +92,11 @@ def exercise(bundle, executable, output):
         ("source", source, True, "source commit differs"),
         ("replay", None, False, "replay subprocess failed"),
     ]
+    if (bundle / "workbench/capture.wav").exists():
+        cases.extend([
+            ("capture_count", capture_count, True, "capture metadata frame count differs"),
+            ("export_program", export_program, True, "workbench export program identity differs"),
+        ])
     report = []
     with tempfile.TemporaryDirectory(prefix="resonant-negative-") as temporary:
         root = Path(temporary)
