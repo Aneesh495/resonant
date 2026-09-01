@@ -41,13 +41,23 @@ struct Expression {
     std::vector<Argument> arguments;
 };
 
+struct ImpulseAsset {
+    SourceSpan span;
+    std::string name;
+    std::uint32_t rate;
+    std::vector<float> samples;
+};
+
 struct Graph {
+    std::vector<ImpulseAsset> impulses;
     std::vector<Expression> expressions;
     std::vector<Argument> outputs;
     SourceSpan output_span;
 };
 
 [[nodiscard]] Graph parse_graph(std::string_view source);
+struct WaveView;
+[[nodiscard]] std::string impulse_declaration(std::string_view name, const WaveView& wave);
 
 struct ScheduleEntry {
     SourceSpan span;

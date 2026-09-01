@@ -421,7 +421,8 @@ std::uint64_t export_session(const Path& path, const Session& session, std::uint
         button(@"Apply patch", self, @selector(applyPatch:), @"\r"), _audio, _rate, _output, text(@"Monitor"), _level]);
     auto* transport = row(@[button(@"Play score", self, @selector(playScore:)),
         button(@"Stop", self, @selector(stopScore:)), text(@"BPM"), _tempo,
-        _record, _export, button(@"Focus keys", self, @selector(focusKeys:)), _midiMenu]);
+        _record, _export, button(@"Focus keys", self, @selector(focusKeys:)), _midiMenu,
+        button(@"Import IR…", self, @selector(importImpulse:))]);
     auto* route = row(@[text(@"ROUTE", 10, true), _from, text(@"→"), _to, _port,
         button(@"Connect", self, @selector(connect:)), text(@"CONTROL", 10, true), _parameter, _parameterValue]);
 
@@ -891,6 +892,31 @@ std::uint64_t export_session(const Path& path, const Session& session, std::uint
     if ([panel runModal] != NSModalResponseOK) return;
     try { [self loadPath:Path(panel.URL.fileSystemRepresentation)]; }
     catch (const std::exception& error) { [self message:error.what() error:true]; }
+}
+
+- (void)importImpulse:(id)sender {
+    (void)sender;
+    auto* panel = [NSOpenPanel openPanel];
+    panel.allowsMultipleSelection = NO;
+    panel.canChooseDirectories = NO;
+    if ([panel runModal] != NSModalResponseOK) return;
+    try {
+        auto source = str(_source.string);
+        const auto graph = parse_graph(source);
+        const auto bytes = read_file(Path(panel.URL.fileSystemRepresentation), 2 * 1024 * 1024);
+        const auto wave = parse_wave(bytes);
+        for (std::size_t i = 1; i <= graph.expressions.size() + graph.impulses.size() + 1; ++i) {
+            const auto name = "ir" + std::to_string(i);
+            if (std::ranges::find(graph.expressions, name, &Expression::name) != graph.expressions.end() ||
+                std::ranges::find(graph.impulses, name, &ImpulseAsset::name) != graph.impulses.end()) continue;
+            source += '\n' + impulse_declaration(name, wave);
+            if ([self applySource:source]) {
+                _source.string = ns(source);
+                [self message:"Imported " + name + ". Use convolve_ir(signal, mix, " + name + ")." error:false];
+            }
+            break;
+        }
+    } catch (const std::exception& error) { [self message:error.what() error:true]; }
 }
 
 - (bool)prepareSession {

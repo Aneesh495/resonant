@@ -27,7 +27,7 @@ level = mul(room, .24);
 out(level);
 ```
 
-The CLI works offline on macOS and Linux. `make demo` writes `out/ember-motif.wav` and disassembles the verified patch. `make patch-gallery` renders each instrument and all six compositions with checksums. The gallery includes aligned convolution sends, an explicit feedback echo, a sustain-pedal piece and a tempo-changing automation piece.
+Use **Import IR…** to embed a short WAVE impulse and reference it from `convolve_ir(signal, mix, ir1)`. The CLI works offline on macOS and Linux. `make demo` writes `out/ember-motif.wav` and disassembles the verified patch. `make patch-gallery` renders each instrument and all six compositions with checksums. The gallery includes aligned convolution sends, an explicit feedback echo, a sustain-pedal piece and a tempo-changing automation piece.
 
 ## Inspect the machine
 
