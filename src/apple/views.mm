@@ -85,6 +85,13 @@ constexpr std::array<const char*, 13> letters{"A","W","S","E","D","F","T","G","Y
         }
         _nodes.push_back(std::move(node));
     }
+    for (const auto& asset : graph.assets) {
+        const bool used = std::ranges::any_of(compiled.schedule, [&](const auto& row) {
+            return std::ranges::find(row.dependencies, asset.name) != row.dependencies.end();
+        });
+        _nodes.push_back({asset.name, (asset.rate == 0 ? "table · " : "impulse · ") +
+                           std::to_string(asset.samples.size()), {}, false, used});
+    }
     Node terminal{"out", "stereo output", {}, true, true};
     for (const auto& arg : graph.outputs) terminal.from.push_back(arg.reference);
     _nodes.push_back(std::move(terminal));

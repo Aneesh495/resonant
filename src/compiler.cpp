@@ -22,7 +22,7 @@ struct Vertex {
     std::uint8_t inputs = 0;
     std::uint32_t words = 0;
     float value = 0;
-    const ImpulseAsset* impulse{};
+    const SignalAsset* asset{};
 };
 
 class Compiler {
@@ -42,13 +42,13 @@ public:
 
 private:
     void declare() {
-        for (const auto& asset : graph_.impulses) {
-            if (!impulses_.emplace(asset.name, &asset).second) {
+        for (const auto& asset : graph_.assets) {
+            if (!assets_.emplace(asset.name, &asset).second) {
                 throw Diagnostic(asset.span, "duplicate name '" + asset.name + "'");
             }
         }
         for (const auto& expression : graph_.expressions) {
-            if (impulses_.contains(expression.name) || !names_.emplace(expression.name, vertices_.size()).second) {
+            if (assets_.contains(expression.name) || !names_.emplace(expression.name, vertices_.size()).second) {
                 throw Diagnostic(expression.span, "duplicate name '" + expression.name + "'");
             }
             vertices_.push_back({expression.span, expression.name});
@@ -92,12 +92,15 @@ private:
             const auto& contract = opcode(vertex.op);
             const auto count = expression.arguments.size();
             const bool default_phase = vertex.op == Op::sine && count == 1;
-            if (vertex.op == Op::convolve_ir) {
-                if (count != 3) throw Diagnostic(vertex.span, "convolve_ir requires signal, wet mix and impulse name");
+            if (vertex.op == Op::convolve_ir || vertex.op == Op::wavetable) {
+                if (count != 3) throw Diagnostic(vertex.span, expression.operation + " requires two signals and an asset name");
                 const auto& asset = expression.arguments[2];
-                const auto found = impulses_.find(asset.reference);
-                if (found == impulses_.end()) throw Diagnostic(asset.span, "unknown impulse asset");
-                vertex.impulse = found->second;
+                const auto found = assets_.find(asset.reference);
+                if (found == assets_.end()) throw Diagnostic(asset.span, "unknown sample asset");
+                if ((found->second->rate == 0) != (vertex.op == Op::wavetable)) {
+                    throw Diagnostic(asset.span, "asset type does not match the operation");
+                }
+                vertex.asset = found->second;
             } else if (!default_phase && count != contract.inputs) {
                 throw Diagnostic(vertex.span, expression.operation + " requires " + std::to_string(contract.inputs) + " inputs");
             }
@@ -228,9 +231,9 @@ private:
                 if (program.states.size() == max_states) throw Diagnostic(v.span, "state slot budget exceeded");
                 ins.slot = static_cast<std::uint16_t>(program.states.size());
                 StateLayout state{name_key(v.name), v.op, v.words};
-                if (v.impulse) {
-                    state.asset_rate = v.impulse->rate;
-                    state.impulse = v.impulse->samples;
+                if (v.asset) {
+                    state.asset_rate = v.asset->rate;
+                    state.asset = v.asset->samples;
                 }
                 program.states.push_back(std::move(state));
             }
@@ -252,7 +255,7 @@ private:
                     if (--uses[src] == 0) allocated[registers[src]] = false;
                 }
             }
-            if (v.impulse) row.dependencies.push_back(v.impulse->name);
+            if (v.asset) row.dependencies.push_back(v.asset->name);
             produced_at[id] = program.instructions.size();
             program.instructions.push_back(ins);
             schedule.push_back(std::move(row));
@@ -281,7 +284,7 @@ private:
     const Graph& graph_;
     std::vector<Vertex> vertices_;
     std::map<std::string, NodeId, std::less<>> names_;
-    std::map<std::string, const ImpulseAsset*, std::less<>> impulses_;
+    std::map<std::string, const SignalAsset*, std::less<>> assets_;
     std::map<std::uint32_t, NodeId> literals_;
     std::array<NodeId, 2> outputs_{};
     std::size_t folded_ = 0;

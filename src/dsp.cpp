@@ -1,6 +1,7 @@
 #include "dsp.hpp"
 
 #include "numeric.hpp"
+#include "resonant/spectral.hpp"
 
 #include <bit>
 #include <numbers>
@@ -19,9 +20,9 @@ float lookup(const std::array<float, table_size>& table, std::uint32_t phase) no
     return table[i] + fraction * (table[next] - table[i]);
 }
 
-float bandlimited(const std::array<std::array<float, table_size>, bands>& table,
+float bandlimited(const BandTable& table,
                   std::uint32_t phase, std::uint32_t step) noexcept {
-    if (step == 0) return table.back()[phase >> (32 - table_bits)];
+    if (step == 0) return lookup(table.back(), phase);
     const auto band = 31U - static_cast<unsigned>(std::bit_width(step));
     const auto index = std::min<std::size_t>(band, bands - 1);
     const auto value = lookup(table[index], phase);
@@ -30,6 +31,34 @@ float bandlimited(const std::array<std::array<float, table_size>, bands>& table,
     const auto weight = 2.0F - 2.0F * static_cast<float>(step) / static_cast<float>(largest_step);
     return lookup(table[index - 1], phase) * (1.0F - weight) + value * weight;
 }
+}
+
+Wavetable::Wavetable(std::span<const float> samples) {
+    const Fft input(samples.size());
+    const Fft output(table_size);
+    std::vector<std::complex<float>> spectrum(samples.size());
+    for (std::size_t i = 0; i < samples.size(); ++i) spectrum[i] = samples[i];
+    (void)input.transform(spectrum);
+    std::vector<std::complex<float>> expanded(table_size);
+    const auto gain = static_cast<float>(table_size) / static_cast<float>(samples.size());
+    const auto nyquist = samples.size() / 2;
+    for (std::size_t band = 0; band < bands; ++band) {
+        std::ranges::fill(expanded, std::complex<float>{});
+        expanded[0] = spectrum[0].real() * gain;
+        const auto limit = std::min(std::size_t{1} << band, nyquist);
+        for (std::size_t k = 1; k <= limit; ++k) {
+            // The input Nyquist bin is its own mirror. Split it when expanding the grid.
+            const auto harmonic = k == nyquist ? std::complex<float>{spectrum[k].real() * .5F, 0} : spectrum[k];
+            expanded[k] = harmonic * gain;
+            expanded[table_size-k] = std::conj(expanded[k]);
+        }
+        (void)output.transform(expanded, true);
+        for (std::size_t i = 0; i < table_size; ++i) bands_[band][i] = expanded[i].real();
+    }
+}
+
+float Wavetable::sample(std::uint32_t phase, std::uint32_t step) const noexcept {
+    return bandlimited(bands_, phase, step);
 }
 
 Tables::Tables() {

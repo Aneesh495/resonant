@@ -422,7 +422,7 @@ std::uint64_t export_session(const Path& path, const Session& session, std::uint
     auto* transport = row(@[button(@"Play score", self, @selector(playScore:)),
         button(@"Stop", self, @selector(stopScore:)), text(@"BPM"), _tempo,
         _record, _export, button(@"Focus keys", self, @selector(focusKeys:)), _midiMenu,
-        button(@"Import IR…", self, @selector(importImpulse:))]);
+        button(@"Import Asset…", self, @selector(importAsset:))]);
     auto* route = row(@[text(@"ROUTE", 10, true), _from, text(@"→"), _to, _port,
         button(@"Connect", self, @selector(connect:)), text(@"CONTROL", 10, true), _parameter, _parameterValue]);
 
@@ -507,6 +507,7 @@ std::uint64_t export_session(const Path& path, const Session& session, std::uint
         if (expr.type == Declaration::parameter && std::ranges::any_of(_compiled->program.program().parameters,
             [&](const auto& p) { return p.key == name_key(expr.name); })) [_parameter addItemWithTitle:name];
     }
+    for (const auto& asset : graph.assets) [_from addItemWithTitle:ns(asset.name)];
     [_to addItemWithTitle:@"out"];
     [self selectParameter:nil];
     [self updateMetrics];
@@ -565,8 +566,10 @@ std::uint64_t export_session(const Path& path, const Session& session, std::uint
         const auto source = str(_source.string);
         const auto graph = parse_graph(source);
         const auto found = std::ranges::find(graph.expressions, str(name), &Expression::name);
+        const auto asset = std::ranges::find(graph.assets, str(name), &SignalAsset::name);
         const auto span = [name isEqualToString:@"out"] ? graph.output_span :
-                          found != graph.expressions.end() ? found->span : SourceSpan{};
+                          found != graph.expressions.end() ? found->span :
+                          asset != graph.assets.end() ? asset->span : SourceSpan{};
         const auto prefix = ns(std::string_view(source).substr(0, span.offset)).length;
         const auto length = ns(std::string_view(source).substr(span.offset, span.length)).length;
         [_source setSelectedRange:NSMakeRange(prefix,length)];
@@ -894,25 +897,32 @@ std::uint64_t export_session(const Path& path, const Session& session, std::uint
     catch (const std::exception& error) { [self message:error.what() error:true]; }
 }
 
-- (void)importImpulse:(id)sender {
+- (void)importAsset:(id)sender {
     (void)sender;
     auto* panel = [NSOpenPanel openPanel];
     panel.allowsMultipleSelection = NO;
     panel.canChooseDirectories = NO;
+    auto* kind = [[NSPopUpButton alloc] initWithFrame:NSMakeRect(0, 0, 220, 30) pullsDown:NO];
+    [kind addItemsWithTitles:@[@"Impulse response", @"Single-cycle wavetable"]];
+    [kind setAccessibilityLabel:@"Asset type"];
+    panel.accessoryView = kind;
+    panel.accessoryViewDisclosed = YES;
     if ([panel runModal] != NSModalResponseOK) return;
+    const bool table = kind.indexOfSelectedItem == 1;
     try {
         auto source = str(_source.string);
         const auto graph = parse_graph(source);
         const auto bytes = read_file(Path(panel.URL.fileSystemRepresentation), 2 * 1024 * 1024);
         const auto wave = parse_wave(bytes);
-        for (std::size_t i = 1; i <= graph.expressions.size() + graph.impulses.size() + 1; ++i) {
-            const auto name = "ir" + std::to_string(i);
+        for (std::size_t i = 1; i <= graph.expressions.size() + graph.assets.size() + 1; ++i) {
+            const auto name = (table ? "table" : "ir") + std::to_string(i);
             if (std::ranges::find(graph.expressions, name, &Expression::name) != graph.expressions.end() ||
-                std::ranges::find(graph.impulses, name, &ImpulseAsset::name) != graph.impulses.end()) continue;
-            source += '\n' + impulse_declaration(name, wave);
+                std::ranges::find(graph.assets, name, &SignalAsset::name) != graph.assets.end()) continue;
+            source += '\n' + (table ? wavetable_declaration(name, wave) : impulse_declaration(name, wave));
             if ([self applySource:source]) {
                 _source.string = ns(source);
-                [self message:"Imported " + name + ". Use convolve_ir(signal, mix, " + name + ")." error:false];
+                const auto op = table ? "wavetable(hertz, phase, " : "convolve_ir(signal, mix, ";
+                [self message:"Imported " + name + ". Use " + op + name + ")." error:false];
             }
             break;
         }

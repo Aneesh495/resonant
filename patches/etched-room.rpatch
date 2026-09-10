@@ -1,0 +1,11 @@
+# A drawn wavetable modulates the color of a polyphonic key voice.
+table contour = cycle(0, .18, .52, .76, .52, .22, .1, 0, -.07, -.18, -.52, -.68, -.44, -.29, -.22, -.09);
+impulse response = pcm(48000, .42, -.18, .29, 0, -.15, .07, .02, 0, .08, 0, 0, -.03);
+keys = poly_triangle(.008, .24);
+curve = wavetable(.65, .125, contour);
+depth = mul(curve, 560);
+cutoff = add(depth, 1300);
+filtered = lowpass(keys, cutoff, .85);
+wet = convolve_ir(filtered, .5, response);
+mix = mul(wet, .35);
+out(mix);

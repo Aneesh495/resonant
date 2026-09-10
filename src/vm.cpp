@@ -34,6 +34,7 @@ struct Memory {
     std::vector<float> cells;
     std::vector<Voice> voices;
     std::unique_ptr<Convolver> convolution;
+    std::unique_ptr<dsp::Wavetable> wavetable;
     dsp::Tank tank;
     std::array<std::uint32_t, 6> fir_cursors{};
     std::uint32_t cursor{};
@@ -139,7 +140,9 @@ struct Vm::Impl {
                 const bool hall = layout.owner == Op::convolve_long;
                 slot.convolution = std::make_unique<Convolver>(hall ? 128 : 64, room_impulse(hall, rate));
             } else if (layout.owner == Op::convolve_ir) {
-                slot.convolution = std::make_unique<Convolver>(128, layout.impulse);
+                slot.convolution = std::make_unique<Convolver>(128, layout.asset);
+            } else if (layout.owner == Op::wavetable) {
+                slot.wavetable = std::make_unique<dsp::Wavetable>(layout.asset);
             } else {
                 slot.cells.resize(layout.words);
                 if (layout.owner == Op::room) slot.tank.configure(rate);
@@ -252,6 +255,13 @@ struct Vm::Impl {
             const auto output = dsp::wave(tables, ins.op, state.cursor, step, y);
             state.cursor += step;
             return output;
+        }
+        case Op::wavetable: {
+            auto& state = memory[ins.slot];
+            const auto step = dsp::phase_step(x, inverse_rate);
+            const auto value = state.wavetable->sample(state.cursor + dsp::phase_offset(y), step);
+            state.cursor += step;
+            return value;
         }
         case Op::noise: {
             auto& state = memory[ins.slot];

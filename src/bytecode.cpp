@@ -2,6 +2,7 @@
 
 #include "bytes.hpp"
 #include "effects.hpp"
+#include "dsp.hpp"
 
 #include <algorithm>
 
@@ -52,7 +53,8 @@ constexpr std::array<Opcode, static_cast<std::size_t>(Op::count)> contracts{{
     {"oversaturate", 2, Rule::first_audio, true, 1350, 2 * dsp::halfband_length, dsp::oversampling_latency},
     {"limiter",      3, Rule::first_audio, true, 170, dsp::limiter_latency + 1, dsp::limiter_latency},
     {"oversaturate_hq", 2, Rule::first_audio, true, 12000, dsp::hq_state_words, dsp::hq_latency},
-    {"convolve_ir",  2, Rule::first_audio, true, 42000, 16384, 128}
+    {"convolve_ir",  2, Rule::first_audio, true, 42000, 16384, 128},
+    {"wavetable",    2, Rule::audio, true, 46, dsp::wavetable_words}
 }};
 
 constexpr std::uint32_t magic = 0x43534252; // RBSC
@@ -99,8 +101,13 @@ VerifiedProgram::VerifiedProgram(Program program, std::uint32_t work, std::uint3
                                  bool delay, std::array<std::uint32_t, 2> latency)
     : program_(std::move(program)), work_(work), words_(words), delay_(delay), latency_(latency) {}
 
+bool valid_wavetable(std::span<const float> samples) noexcept {
+    return samples.size() >= 16 && samples.size() <= max_asset_samples && std::has_single_bit(samples.size()) &&
+           std::ranges::all_of(samples, [](float x) { return std::isfinite(x) && std::abs(x) <= 1; });
+}
+
 bool valid_impulse(std::span<const float> samples, std::uint32_t rate) noexcept {
-    if (samples.empty() || samples.size() > max_impulse_samples || rate < 8000 || rate > 192000) return false;
+    if (samples.empty() || samples.size() > max_asset_samples || rate < 8000 || rate > 192000) return false;
     double gain = 0;
     for (float tap : samples) {
         if (!std::isfinite(tap) || std::abs(tap) > 1) return false;
@@ -117,9 +124,11 @@ VerifiedProgram verify(Program program) {
         const auto& contract = opcode(state.owner);
         require(state.key != 0, "zero state identity");
         if (state.owner == Op::convolve_ir) {
-            require(valid_impulse(state.impulse, state.asset_rate), "impulse asset exceeds its rate, extent or gain bound");
+            require(valid_impulse(state.asset, state.asset_rate), "impulse asset exceeds its rate, extent or gain bound");
+        } else if (state.owner == Op::wavetable) {
+            require(state.asset_rate == 0 && valid_wavetable(state.asset), "invalid wavetable attachment");
         } else {
-            require(state.asset_rate == 0 && state.impulse.empty(), "asset attached to an incompatible state");
+            require(state.asset_rate == 0 && state.asset.empty(), "asset attached to an incompatible state");
         }
         require(contract.state_words != 0, "stateless opcode owns state");
         if (state.owner == Op::delay_read || state.owner == Op::align) {
@@ -221,7 +230,7 @@ VerifiedProgram verify(Program program) {
 }
 
 std::uint16_t format_version(const VerifiedProgram& checked) noexcept {
-    return std::ranges::any_of(checked.program().states, [](const auto& s) { return !s.impulse.empty(); })
+    return std::ranges::any_of(checked.program().states, [](const auto& s) { return !s.asset.empty(); })
         ? bytecode_version : bytecode_version_without_assets;
 }
 
@@ -256,10 +265,10 @@ std::vector<std::byte> encode(const VerifiedProgram& checked) {
         write(bytes, std::bit_cast<std::uint32_t>(ins.immediate));
     }
     for (const auto& state : program.states) {
-        if (state.impulse.empty()) continue;
+        if (state.asset.empty()) continue;
         write(bytes, state.asset_rate);
-        write(bytes, static_cast<std::uint32_t>(state.impulse.size()));
-        for (const float sample : state.impulse) write(bytes, std::bit_cast<std::uint32_t>(sample));
+        write(bytes, static_cast<std::uint32_t>(state.asset.size()));
+        for (const float sample : state.asset) write(bytes, std::bit_cast<std::uint32_t>(sample));
     }
     return bytes;
 }
@@ -316,19 +325,19 @@ VerifiedProgram decode(std::span<const std::byte> bytes) {
     if (assets) {
         bool found = false;
         for (auto& state : program.states) {
-            if (state.owner != Op::convolve_ir) continue;
+            if (state.owner != Op::convolve_ir && state.owner != Op::wavetable) continue;
             found = true;
             state.asset_rate = read<std::uint32_t>(bytes, pos);
             const auto count = read<std::uint32_t>(bytes, pos + 4);
             pos += 8;
-            require(count > 0 && count <= max_impulse_samples && count <= (bytes.size() - pos) / 4,
-                    "invalid impulse attachment extent");
-            state.impulse.reserve(count);
+            require(count > 0 && count <= max_asset_samples && count <= (bytes.size() - pos) / 4,
+                    "invalid sample attachment extent");
+            state.asset.reserve(count);
             for (std::uint32_t i = 0; i < count; ++i, pos += 4) {
-                state.impulse.push_back(std::bit_cast<float>(read<std::uint32_t>(bytes, pos)));
+                state.asset.push_back(std::bit_cast<float>(read<std::uint32_t>(bytes, pos)));
             }
         }
-        require(found && pos == bytes.size(), "missing impulse attachments or trailing data");
+        require(found && pos == bytes.size(), "missing sample attachments or trailing data");
     }
     return verify(std::move(program));
 }

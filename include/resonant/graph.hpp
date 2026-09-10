@@ -41,15 +41,15 @@ struct Expression {
     std::vector<Argument> arguments;
 };
 
-struct ImpulseAsset {
+struct SignalAsset {
     SourceSpan span;
     std::string name;
-    std::uint32_t rate;
+    std::uint32_t rate; // Zero denotes a periodic wavetable.
     std::vector<float> samples;
 };
 
 struct Graph {
-    std::vector<ImpulseAsset> impulses;
+    std::vector<SignalAsset> assets;
     std::vector<Expression> expressions;
     std::vector<Argument> outputs;
     SourceSpan output_span;
@@ -58,6 +58,7 @@ struct Graph {
 [[nodiscard]] Graph parse_graph(std::string_view source);
 struct WaveView;
 [[nodiscard]] std::string impulse_declaration(std::string_view name, const WaveView& wave);
+[[nodiscard]] std::string wavetable_declaration(std::string_view name, const WaveView& wave);
 
 struct ScheduleEntry {
     SourceSpan span;
