@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <span>
+#include <string_view>
 #include <vector>
 
 namespace resonant {
@@ -23,6 +24,7 @@ struct WaveOptions {
     std::uint16_t channels = 2;
     // Zero disables TPDF dither. Other values seed the reproducible generator.
     std::uint32_t dither_seed = 0;
+    std::string_view comment{};
 };
 
 [[nodiscard]] WaveView parse_wave(std::span<const std::byte> bytes);

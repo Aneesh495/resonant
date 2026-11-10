@@ -142,7 +142,13 @@ std::vector<std::byte> encode_wave(std::span<const double> samples, WaveOptions 
     validate_layout(options.channels, options.rate);
     const auto type = format(options.encoding);
     if (samples.size() % options.channels != 0) throw std::runtime_error("partial input frame");
-    const std::uint32_t header = type.tag == 3 ? 58 : 44;
+    if (options.comment.size() > 4096 || options.comment.find('\0') != std::string_view::npos) {
+        throw std::runtime_error("invalid WAVE comment");
+    }
+    const auto comment_size = options.comment.empty() ? 0U : static_cast<std::uint32_t>(options.comment.size() + 1);
+    const auto comment_padding = comment_size & 1U;
+    const auto extra = comment_size == 0 ? 0U : 20U + comment_size + comment_padding;
+    const std::uint32_t header = (type.tag == 3 ? 58U : 44U) + extra;
     if (samples.size() > (std::numeric_limits<std::uint32_t>::max() - header) / type.width) {
         throw std::runtime_error("audio exceeds RIFF size limit");
     }
@@ -167,6 +173,16 @@ std::vector<std::byte> encode_wave(std::span<const double> samples, WaveOptions 
         fourcc(bytes, "fact");
         write<std::uint32_t>(bytes, 4);
         write(bytes, static_cast<std::uint32_t>(samples.size() / options.channels));
+    }
+    if (comment_size != 0) {
+        fourcc(bytes, "LIST");
+        write(bytes, 12U + comment_size + comment_padding);
+        fourcc(bytes, "INFO");
+        fourcc(bytes, "ICMT");
+        write(bytes, comment_size);
+        fourcc(bytes, options.comment);
+        bytes.push_back(std::byte{});
+        if (comment_padding != 0) bytes.push_back(std::byte{});
     }
     fourcc(bytes, "data");
     write(bytes, size);

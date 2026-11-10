@@ -10,6 +10,7 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <sstream>
 #include <thread>
 
 namespace {
@@ -85,10 +86,13 @@ void export_audio(const VerifiedProgram& program, const Timeline& timeline, cons
                   Execution execution) {
     const auto render = render_offline(program, timeline, rate, block, execution);
     const std::vector<double> samples(render.samples.begin(), render.samples.end());
-    const auto bytes = encode_wave(samples, {format, rate, 2, 0});
-    atomic_write(path, bytes);
     const auto code = encode(program);
     const auto code_id = name_key({reinterpret_cast<const char*>(code.data()), code.size()});
+    std::ostringstream comment;
+    comment << "Resonant frames=" << timeline.frames << " source_id=" << std::hex << source_id
+            << " program_id=" << code_id;
+    const auto identity = comment.str();
+    atomic_write(path, encode_wave(samples, {format, rate, 2, 0, identity}));
     std::cout << "frames=" << timeline.frames << " rate=" << rate << " block=" << block
               << " events=" << timeline.events.size() << " instructions=" << render.instructions
               << " clipped=" << render.clipped << " peak=" << render.peak
