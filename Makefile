@@ -65,3 +65,10 @@ patch-gallery: build
 
 data:
 	ls patches/*.rpatch compositions/*.rsn
+
+.PHONY: realtime-audit stress
+realtime-audit: build
+	$(BUILD)/resonant_campaigns audit
+
+stress: build
+	$(BUILD)/resonant_campaigns swap
