@@ -97,6 +97,7 @@ bool valid_event(const Event& e) noexcept {
     case EventType::sustain:
         return e.channel < 16 && (e.value == 0 || e.value == 1);
     case EventType::all_off:
+    case EventType::all_sound_off:
         return e.channel < 16;
     case EventType::panic:
         return true;
@@ -179,9 +180,11 @@ struct Vm::Impl {
             for (auto& voice : slot.voices) {
                 if (event.type == EventType::panic) voice = {};
                 if (voice.channel != event.channel || voice.stage == Stage::idle) continue;
-                if (event.type == EventType::all_off) {
+                if (event.type == EventType::all_sound_off) {
+                    voice = {};
+                } else if (event.type == EventType::all_off) {
                     voice.pressed = false;
-                    voice.stage = Stage::release;
+                    if (!pedal[event.channel]) voice.stage = Stage::release;
                 } else if ((event.type == EventType::note_off || event.type == EventType::note_on) &&
                            voice.note == event.note) {
                     voice.pressed = false;

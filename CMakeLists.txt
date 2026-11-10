@@ -15,7 +15,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
   endif()
 endif()
 
-add_library(resonant_core src/wave.cpp src/bytecode.cpp src/parser.cpp src/compiler.cpp src/dsp.cpp src/simd.cpp src/vm.cpp src/engine.cpp src/midi.cpp src/session.cpp src/files.cpp src/spectral.cpp src/effects.cpp)
+add_library(resonant_core src/wave.cpp src/bytecode.cpp src/parser.cpp src/compiler.cpp src/dsp.cpp src/simd.cpp src/vm.cpp src/engine.cpp src/host_clock.cpp src/midi.cpp src/session.cpp src/files.cpp src/spectral.cpp src/effects.cpp)
 target_include_directories(resonant_core PUBLIC include)
 
 function(resonant_test name)
@@ -39,6 +39,7 @@ if(BUILD_TESTING)
   set_tests_properties(engine PROPERTIES TIMEOUT 30)
 endif()
 resonant_test(session)
+resonant_test(host_clock)
 
 option(RESONANT_DEVICE "Build the PortAudio device adapter when available" ON)
 if(RESONANT_DEVICE)
@@ -67,6 +68,11 @@ if(APPLE AND RESONANT_WORKBENCH)
   enable_language(OBJCXX)
   set(starter compositions/ember-motif.rsn)
   set_source_files_properties(${starter} PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
+  add_library(resonant_core_midi STATIC src/apple/midi_input.mm)
+  set_target_properties(resonant_core_midi PROPERTIES
+    OBJCXX_STANDARD 23 OBJCXX_STANDARD_REQUIRED YES OBJCXX_EXTENSIONS NO)
+  target_compile_options(resonant_core_midi PRIVATE -fobjc-arc)
+  target_link_libraries(resonant_core_midi PUBLIC resonant_core "-framework CoreMIDI" "-framework CoreFoundation")
   add_executable(resonant_workbench MACOSX_BUNDLE src/apple/workbench.mm src/apple/views.mm ${starter})
   set_target_properties(resonant_workbench PROPERTIES
     OUTPUT_NAME Resonant
@@ -76,8 +82,15 @@ if(APPLE AND RESONANT_WORKBENCH)
     MACOSX_BUNDLE_BUNDLE_VERSION ${PROJECT_VERSION}
     MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION})
   target_compile_options(resonant_workbench PRIVATE -fobjc-arc)
-  target_link_libraries(resonant_workbench PRIVATE resonant_core "-framework AppKit")
+  target_link_libraries(resonant_workbench PRIVATE resonant_core_midi "-framework AppKit")
   install(TARGETS resonant_workbench BUNDLE DESTINATION .)
+  if(BUILD_TESTING)
+    add_executable(test_core_midi tests/core_midi.mm)
+    set_target_properties(test_core_midi PROPERTIES
+      OBJCXX_STANDARD 23 OBJCXX_STANDARD_REQUIRED YES OBJCXX_EXTENSIONS NO)
+    target_compile_options(test_core_midi PRIVATE -fobjc-arc)
+    target_link_libraries(test_core_midi PRIVATE resonant_core_midi)
+  endif()
 endif()
 
 resonant_test(differential)

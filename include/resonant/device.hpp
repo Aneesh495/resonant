@@ -1,7 +1,9 @@
 #pragma once
 
 #include "resonant/engine.hpp"
+#include "resonant/host_clock.hpp"
 
+#include <optional>
 #include <string>
 
 namespace resonant {
@@ -18,6 +20,7 @@ struct DeviceInfo {
 struct DeviceConfig {
     int device = -1;
     std::uint32_t block_size = 128;
+    bool track_host_clock = false;
 };
 
 struct DeviceStatus {
@@ -42,6 +45,7 @@ public:
     void open(Engine& engine, DeviceConfig config = {});
     void close() noexcept;
     [[nodiscard]] DeviceStatus status() const;
+    [[nodiscard]] std::optional<FrameAnchor> clock_anchor() noexcept;
     // Default is muted. The device boundary caps gain at 0.2 (-14 dBFS).
     void gain(float value) noexcept;
 

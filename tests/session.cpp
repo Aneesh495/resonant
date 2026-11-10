@@ -56,4 +56,10 @@ int main() {
     CHECK(!midi.push(0xf7, 72));
     CHECK(!midi.push(0x30, 73));
     CHECK(midi.malformed() == 1 && midi.ignored() == 3);
+    CHECK(!midi.push(0xb2, 80) && !midi.push(120, 80));
+    const auto quiet = midi.push(0, 80);
+    CHECK(quiet && quiet->type == EventType::all_sound_off && quiet->channel == 2);
+    CHECK(!midi.push(123, 81));
+    const auto release = midi.push(0, 81);
+    CHECK(release && release->type == EventType::all_off && release->frame == 81);
 }

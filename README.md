@@ -16,7 +16,7 @@ make demo
 make workbench
 ```
 
-In the workbench, click **Start muted**, then **Play score** or **Focus keys** and play A W S E D F T G Y H U J K. Raise **Monitor** to hear the output. Click an output port and then an input, or use the route controls. **Apply patch** compiles edits in the source pane. An invalid edit shows a source diagnostic and leaves the running graph intact. The schedule pane shows rates, bytecode operations and physical register lifetimes.
+In the workbench, click **Start muted**, then **Play score** or **Focus keys** and play A W S E D F T G Y H U J K. Raise **Monitor** to hear the output. Select a Core MIDI source in **MIDI Off** to play from an external controller or a virtual source. Click an output port and then an input, or use the route controls. **Apply patch** compiles edits in the source pane. An invalid edit shows a source diagnostic and leaves the running graph intact. The schedule pane shows rates, bytecode operations and physical register lifetimes.
 
 ```text
 param cutoff = 1800;

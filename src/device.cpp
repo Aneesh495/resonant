@@ -1,5 +1,7 @@
 #include "resonant/device.hpp"
 
+#include "spsc.hpp"
+
 #include <algorithm>
 #include <atomic>
 #include <cmath>
@@ -7,6 +9,9 @@
 
 #if RESONANT_PORTAUDIO
 #include <portaudio.h>
+#if defined(__APPLE__)
+#include <mach/mach_time.h>
+#endif
 #endif
 
 namespace resonant {
@@ -35,6 +40,11 @@ struct Device::Impl {
     std::atomic<std::uint32_t> smallest{};
     std::atomic<std::uint32_t> largest{};
     std::atomic<bool> invalid{};
+#if defined(__APPLE__)
+    bool track_host_clock{};
+    Spsc<FrameAnchor, 64> anchors;
+    std::optional<FrameAnchor> last_anchor;
+#endif
 
     static_assert(std::atomic<float>::is_always_lock_free && std::atomic<std::uint32_t>::is_always_lock_free &&
                   std::atomic<std::uint64_t>::is_always_lock_free && std::atomic<bool>::is_always_lock_free);
@@ -47,6 +57,11 @@ struct Device::Impl {
             return paAbort;
         }
         const auto n = static_cast<std::uint32_t>(frames);
+#if defined(__APPLE__)
+        if (state.track_host_clock) {
+            (void)state.anchors.push({mach_absolute_time(), state.engine->clock(), n});
+        }
+#endif
         const auto min = state.smallest.load(std::memory_order_relaxed);
         if (min == 0 || n < min) state.smallest.store(n, std::memory_order_relaxed);
         if (n > state.largest.load(std::memory_order_relaxed)) state.largest.store(n, std::memory_order_relaxed);
@@ -111,6 +126,11 @@ void Device::open(Engine& engine, DeviceConfig config) {
 
     close();
     impl_->engine = &engine;
+#if defined(__APPLE__)
+    impl_->track_host_clock = config.track_host_clock;
+    (void)impl_->anchors.discard_all();
+    impl_->last_anchor.reset();
+#endif
     impl_->gain.store(0, std::memory_order_relaxed);
     impl_->callbacks.store(0, std::memory_order_relaxed);
     impl_->underflows.store(0, std::memory_order_relaxed);
@@ -158,6 +178,18 @@ DeviceStatus Device::status() const {
 #else
     missing();
 #endif
+}
+
+std::optional<FrameAnchor> Device::clock_anchor() noexcept {
+#if RESONANT_PORTAUDIO && defined(__APPLE__)
+    if (impl_->stream != nullptr && impl_->track_host_clock) {
+        FrameAnchor anchor;
+        // Keep control work bounded even if the producer keeps filling the ring.
+        for (unsigned i = 0; i < 64 && impl_->anchors.pop(anchor); ++i) impl_->last_anchor = anchor;
+        return impl_->last_anchor;
+    }
+#endif
+    return {};
 }
 
 void Device::gain(float value) noexcept {

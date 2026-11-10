@@ -9,3 +9,11 @@ The control thread computes a migration plan against the observed generation. Ma
 Callback-visible atomics have compile-time lock-free checks. DSP state, event queues, scratch registers, crossfade storage and capture rings are allocated before playback. The callback can take an OS monotonic timestamp. Duration traces measure engine execution and capture through the completed clock store. They exclude trace-ring publication and host adapter entry and exit. Measured callback deadlines depend on OS and device scheduling.
 
 Transport stop asks the consumer to discard the pending ring at the next callback boundary and clear all voices. While cancellation is pending, the producer rejects new events. The trace and counters distinguish late events, explicit cancellations and queue pressure. Capture reads the pre-device-gain stereo VM mix, so a muted monitoring stream can still record. The captured blocks carry frame and generation numbers.
+
+## Live MIDI on macOS
+
+The workbench connects to one explicitly selected Core MIDI source. The input port requests MIDI 1.0 and accepts channel voice messages in group zero. The supported controls are note on and off, sustain, all notes off and all sound off. Core MIDI's receive thread writes a bounded inbox. The workbench is the sole producer of the engine event queue and merges eligible MIDI and score events by sample frame, with score events first on ties. A small submission window keeps future MIDI from moving earlier score events.
+
+The PortAudio callback samples the Mach host clock beside the first frame it will render and publishes that pair when the workbench enables clock tracking. Control maps MIDI timestamps into this frame space with a 10 ms lead, rounds once, and clips to the writable window. The input menu reports adjustments and drops. Source loss and overflow cancel the transport and clear held notes. This clock measures the render position and leaves DAC and USB transport delay outside the mapping.
+
+`make midi-smoke` sends two timestamped events through a real Core MIDI virtual source to the muted audio device. It checks exact event spacing, zero late or dropped events, and the first nonzero PCM frame relative to the scheduled note-on. Physical MIDI controller and DAC loopback measurements are separate.

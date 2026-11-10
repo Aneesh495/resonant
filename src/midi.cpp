@@ -45,7 +45,7 @@ std::optional<Event> Midi1::push(std::uint8_t byte, std::uint64_t frame) noexcep
             event.type = EventType::sustain;
             event.value = data_[1] >= 64 ? 1.0F : 0.0F;
         } else {
-            event.type = EventType::all_off;
+            event.type = data_[0] == 120 ? EventType::all_sound_off : EventType::all_off;
         }
         return event;
     }
