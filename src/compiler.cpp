@@ -22,6 +22,7 @@ struct Vertex {
     std::uint8_t inputs = 0;
     std::uint32_t words = 0;
     float value = 0;
+    const ImpulseAsset* impulse{};
 };
 
 class Compiler {
@@ -41,8 +42,13 @@ public:
 
 private:
     void declare() {
+        for (const auto& asset : graph_.impulses) {
+            if (!impulses_.emplace(asset.name, &asset).second) {
+                throw Diagnostic(asset.span, "duplicate name '" + asset.name + "'");
+            }
+        }
         for (const auto& expression : graph_.expressions) {
-            if (!names_.emplace(expression.name, vertices_.size()).second) {
+            if (impulses_.contains(expression.name) || !names_.emplace(expression.name, vertices_.size()).second) {
                 throw Diagnostic(expression.span, "duplicate name '" + expression.name + "'");
             }
             vertices_.push_back({expression.span, expression.name});
@@ -86,12 +92,18 @@ private:
             const auto& contract = opcode(vertex.op);
             const auto count = expression.arguments.size();
             const bool default_phase = vertex.op == Op::sine && count == 1;
-            if (!default_phase && count != contract.inputs) {
+            if (vertex.op == Op::convolve_ir) {
+                if (count != 3) throw Diagnostic(vertex.span, "convolve_ir requires signal, wet mix and impulse name");
+                const auto& asset = expression.arguments[2];
+                const auto found = impulses_.find(asset.reference);
+                if (found == impulses_.end()) throw Diagnostic(asset.span, "unknown impulse asset");
+                vertex.impulse = found->second;
+            } else if (!default_phase && count != contract.inputs) {
                 throw Diagnostic(vertex.span, expression.operation + " requires " + std::to_string(contract.inputs) + " inputs");
             }
             vertex.inputs = contract.inputs;
             vertex.words = contract.state_words;
-            for (std::size_t i = 0; i < count; ++i) vertex.input[i] = resolve(expression.arguments[i]);
+            for (std::size_t i = 0; i < std::min<std::size_t>(count, contract.inputs); ++i) vertex.input[i] = resolve(expression.arguments[i]);
             if (default_phase) vertex.input[1] = resolve({vertex.span, {}, 0});
         }
         vertices_[id] = std::move(vertex);
@@ -215,7 +227,12 @@ private:
             if (v.words != 0) {
                 if (program.states.size() == max_states) throw Diagnostic(v.span, "state slot budget exceeded");
                 ins.slot = static_cast<std::uint16_t>(program.states.size());
-                program.states.push_back({name_key(v.name), v.op, v.words});
+                StateLayout state{name_key(v.name), v.op, v.words};
+                if (v.impulse) {
+                    state.asset_rate = v.impulse->rate;
+                    state.impulse = v.impulse->samples;
+                }
+                program.states.push_back(std::move(state));
             }
             if (v.op == Op::parameter) {
                 if (program.parameters.size() == max_parameters) throw Diagnostic(v.span, "parameter budget exceeded");
@@ -235,6 +252,7 @@ private:
                     if (--uses[src] == 0) allocated[registers[src]] = false;
                 }
             }
+            if (v.impulse) row.dependencies.push_back(v.impulse->name);
             produced_at[id] = program.instructions.size();
             program.instructions.push_back(ins);
             schedule.push_back(std::move(row));
@@ -263,6 +281,7 @@ private:
     const Graph& graph_;
     std::vector<Vertex> vertices_;
     std::map<std::string, NodeId, std::less<>> names_;
+    std::map<std::string, const ImpulseAsset*, std::less<>> impulses_;
     std::map<std::uint32_t, NodeId> literals_;
     std::array<NodeId, 2> outputs_{};
     std::size_t folded_ = 0;

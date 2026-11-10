@@ -8,7 +8,9 @@
 #include <vector>
 
 namespace resonant {
-inline constexpr std::uint16_t bytecode_version = 1;
+inline constexpr std::uint16_t bytecode_version = 2;
+inline constexpr std::uint16_t bytecode_version_without_assets = 1;
+inline constexpr std::size_t max_impulse_samples = 1024;
 inline constexpr std::size_t max_registers = 256;
 inline constexpr std::size_t max_instructions = 1024;
 inline constexpr std::size_t max_states = 128;
@@ -28,7 +30,7 @@ enum class Op : std::uint8_t {
     lowpass, highpass, bandpass, saturate, pan_left, pan_right,
     poly_sine, poly_saw, poly_pulse, poly_triangle,
     follower, compressor, gate, delay_mod, allpass, output,
-    align, convolve_short, convolve_long, room, oversaturate, limiter, oversaturate_hq, count
+    align, convolve_short, convolve_long, room, oversaturate, limiter, oversaturate_hq, convolve_ir, count
 };
 
 struct Instruction {
@@ -44,6 +46,8 @@ struct StateLayout {
     std::uint64_t key{};
     Op owner{};
     std::uint32_t words{};
+    std::uint32_t asset_rate{};
+    std::vector<float> impulse{};
 };
 
 struct Parameter {
@@ -92,6 +96,11 @@ private:
 };
 
 [[nodiscard]] VerifiedProgram verify(Program program);
+inline constexpr std::size_t max_bytecode_bytes =
+    20 + 16 * (max_instructions + max_states + max_parameters) + max_states * (8 + 4 * max_impulse_samples);
+
+[[nodiscard]] bool valid_impulse(std::span<const float> samples, std::uint32_t rate) noexcept;
+[[nodiscard]] std::uint16_t format_version(const VerifiedProgram& program) noexcept;
 [[nodiscard]] std::vector<std::byte> encode(const VerifiedProgram& program);
 [[nodiscard]] std::uint64_t program_key(const VerifiedProgram& program);
 [[nodiscard]] VerifiedProgram decode(std::span<const std::byte> bytes);

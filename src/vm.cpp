@@ -138,6 +138,8 @@ struct Vm::Impl {
             else if (layout.owner == Op::convolve_short || layout.owner == Op::convolve_long) {
                 const bool hall = layout.owner == Op::convolve_long;
                 slot.convolution = std::make_unique<Convolver>(hall ? 128 : 64, room_impulse(hall, rate));
+            } else if (layout.owner == Op::convolve_ir) {
+                slot.convolution = std::make_unique<Convolver>(128, layout.impulse);
             } else {
                 slot.cells.resize(layout.words);
                 if (layout.owner == Op::room) slot.tank.configure(rate);
@@ -282,7 +284,8 @@ struct Vm::Impl {
             return previous;
         }
         case Op::convolve_short:
-        case Op::convolve_long: {
+        case Op::convolve_long:
+        case Op::convolve_ir: {
             auto& state = memory[ins.slot];
             const auto result = state.convolution->process(x);
             const auto mix = std::clamp(y, 0.0F, 1.0F);

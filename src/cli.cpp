@@ -15,7 +15,6 @@
 
 namespace {
 using namespace resonant;
-constexpr std::size_t max_bytecode_bytes = 20 + 16 * (max_instructions + max_states + max_parameters);
 volatile std::sig_atomic_t interrupted = 0;
 
 void interrupt(int) { interrupted = 1; }
@@ -46,7 +45,7 @@ Compilation read_patch(std::string_view path) {
 
 void summary(const VerifiedProgram& checked) {
     const auto& program = checked.program();
-    std::cout << "bytecode_version=" << bytecode_version << " instructions=" << program.instructions.size()
+    std::cout << "bytecode_version=" << format_version(checked) << " instructions=" << program.instructions.size()
               << " registers=" << program.registers << " states=" << program.states.size()
               << " parameters=" << program.parameters.size() << " state_words=" << checked.state_words()
               << " work_per_frame=" << checked.work_per_frame() << " feedback=" << checked.has_feedback()
@@ -199,6 +198,7 @@ void usage() {
               << "resonant render-patch PATCH WAVE FRAMES [RATE [BLOCK [ENCODING [scalar|block]]]]\n"
               << "resonant schedule SESSION [RATE]\n"
               << "resonant wave-info WAVE\n"
+              << "resonant import-impulse WAVE NAME\n"
               << "resonant devices\n"
               << "resonant play PATCH SECONDS [GAIN [DEVICE [RATE [BLOCK [TRACE_CSV]]]]]\n"
               << "resonant doctor\n";
@@ -251,6 +251,10 @@ void command(std::string_view mode, std::span<char*> args) {
                       << static_cast<unsigned>(event.channel) << ',' << static_cast<unsigned>(event.note) << ','
                       << event.key << ',' << event.value << ',' << event.ramp << '\n';
         }
+    } else if (mode == "import-impulse") {
+        require_count(args, 2, 2);
+        const auto bytes = read_file(args[0], 2 * 1024 * 1024);
+        std::cout << impulse_declaration(args[1], parse_wave(bytes));
     } else if (mode == "wave-info") {
         require_count(args, 1, 1);
         const auto bytes = read_file(args[0], 256 * 1024 * 1024);

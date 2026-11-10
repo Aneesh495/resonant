@@ -51,7 +51,8 @@ constexpr std::array<Opcode, static_cast<std::size_t>(Op::count)> contracts{{
     {"room",         3, Rule::first_audio, true, 160, dsp::tank_words},
     {"oversaturate", 2, Rule::first_audio, true, 1350, 2 * dsp::halfband_length, dsp::oversampling_latency},
     {"limiter",      3, Rule::first_audio, true, 170, dsp::limiter_latency + 1, dsp::limiter_latency},
-    {"oversaturate_hq", 2, Rule::first_audio, true, 12000, dsp::hq_state_words, dsp::hq_latency}
+    {"oversaturate_hq", 2, Rule::first_audio, true, 12000, dsp::hq_state_words, dsp::hq_latency},
+    {"convolve_ir",  2, Rule::first_audio, true, 42000, 16384, 128}
 }};
 
 constexpr std::uint32_t magic = 0x43534252; // RBSC
@@ -98,6 +99,16 @@ VerifiedProgram::VerifiedProgram(Program program, std::uint32_t work, std::uint3
                                  bool delay, std::array<std::uint32_t, 2> latency)
     : program_(std::move(program)), work_(work), words_(words), delay_(delay), latency_(latency) {}
 
+bool valid_impulse(std::span<const float> samples, std::uint32_t rate) noexcept {
+    if (samples.empty() || samples.size() > max_impulse_samples || rate < 8000 || rate > 192000) return false;
+    double gain = 0;
+    for (float tap : samples) {
+        if (!std::isfinite(tap) || std::abs(tap) > 1) return false;
+        gain += std::abs(tap);
+    }
+    return gain <= 8;
+}
+
 VerifiedProgram verify(Program program) {
     validate_counts(program.registers, program.states.size(), program.parameters.size(), program.instructions.size());
     std::uint32_t words = 0;
@@ -105,6 +116,11 @@ VerifiedProgram verify(Program program) {
         const auto& state = program.states[i];
         const auto& contract = opcode(state.owner);
         require(state.key != 0, "zero state identity");
+        if (state.owner == Op::convolve_ir) {
+            require(valid_impulse(state.impulse, state.asset_rate), "impulse asset exceeds its rate, extent or gain bound");
+        } else {
+            require(state.asset_rate == 0 && state.impulse.empty(), "asset attached to an incompatible state");
+        }
         require(contract.state_words != 0, "stateless opcode owns state");
         if (state.owner == Op::delay_read || state.owner == Op::align) {
             require(state.words >= 1 && state.words <= max_delay, "delay extent out of bounds");
@@ -204,13 +220,18 @@ VerifiedProgram verify(Program program) {
     return VerifiedProgram(std::move(program), work, words, delay, {latency[inputs[0]], latency[inputs[1]]});
 }
 
+std::uint16_t format_version(const VerifiedProgram& checked) noexcept {
+    return std::ranges::any_of(checked.program().states, [](const auto& s) { return !s.impulse.empty(); })
+        ? bytecode_version : bytecode_version_without_assets;
+}
+
 std::vector<std::byte> encode(const VerifiedProgram& checked) {
     using binary::write;
     const auto& program = checked.program();
     binary::Bytes bytes;
     bytes.reserve(header_bytes + record_bytes * (program.states.size() + program.parameters.size() + program.instructions.size()));
     write(bytes, magic);
-    write(bytes, bytecode_version);
+    write(bytes, format_version(checked));
     write(bytes, program.registers);
     write(bytes, static_cast<std::uint16_t>(program.states.size()));
     write(bytes, static_cast<std::uint16_t>(program.parameters.size()));
@@ -234,6 +255,12 @@ std::vector<std::byte> encode(const VerifiedProgram& checked) {
         write(bytes, ins.slot);
         write(bytes, std::bit_cast<std::uint32_t>(ins.immediate));
     }
+    for (const auto& state : program.states) {
+        if (state.impulse.empty()) continue;
+        write(bytes, state.asset_rate);
+        write(bytes, static_cast<std::uint32_t>(state.impulse.size()));
+        for (const float sample : state.impulse) write(bytes, std::bit_cast<std::uint32_t>(sample));
+    }
     return bytes;
 }
 
@@ -245,7 +272,9 @@ std::uint64_t program_key(const VerifiedProgram& program) {
 VerifiedProgram decode(std::span<const std::byte> bytes) {
     using binary::read;
     require(read<std::uint32_t>(bytes, 0) == magic, "invalid bytecode magic");
-    require(read<std::uint16_t>(bytes, 4) == bytecode_version, "unsupported bytecode version");
+    const auto version = read<std::uint16_t>(bytes, 4);
+    const bool assets = version == bytecode_version;
+    require(assets || version == bytecode_version_without_assets, "unsupported bytecode version");
     Program program{};
     program.registers = read<std::uint16_t>(bytes, 6);
     const auto states = read<std::uint16_t>(bytes, 8);
@@ -254,7 +283,9 @@ VerifiedProgram decode(std::span<const std::byte> bytes) {
     validate_counts(program.registers, states, parameters, instructions);
     require(read<std::uint32_t>(bytes, 16) == 0, "nonzero reserved header");
     const auto records = static_cast<std::size_t>(states) + parameters + instructions;
-    require(bytes.size() == header_bytes + records * record_bytes, "incorrect bytecode length");
+    const auto prefix = header_bytes + records * record_bytes;
+    require(bytes.size() >= prefix && bytes.size() <= max_bytecode_bytes && (assets || bytes.size() == prefix),
+            "incorrect bytecode length");
     std::size_t pos = header_bytes;
     program.states.reserve(states);
     program.parameters.reserve(parameters);
@@ -281,6 +312,23 @@ VerifiedProgram decode(std::span<const std::byte> bytes) {
         ins.slot = read<std::uint16_t>(bytes, pos + 10);
         ins.immediate = std::bit_cast<float>(read<std::uint32_t>(bytes, pos + 12));
         program.instructions.push_back(ins);
+    }
+    if (assets) {
+        bool found = false;
+        for (auto& state : program.states) {
+            if (state.owner != Op::convolve_ir) continue;
+            found = true;
+            state.asset_rate = read<std::uint32_t>(bytes, pos);
+            const auto count = read<std::uint32_t>(bytes, pos + 4);
+            pos += 8;
+            require(count > 0 && count <= max_impulse_samples && count <= (bytes.size() - pos) / 4,
+                    "invalid impulse attachment extent");
+            state.impulse.reserve(count);
+            for (std::uint32_t i = 0; i < count; ++i, pos += 4) {
+                state.impulse.push_back(std::bit_cast<float>(read<std::uint32_t>(bytes, pos)));
+            }
+        }
+        require(found && pos == bytes.size(), "missing impulse attachments or trailing data");
     }
     return verify(std::move(program));
 }
