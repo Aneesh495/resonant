@@ -22,7 +22,7 @@ float lookup(const std::array<float, table_size>& table, std::uint32_t phase) no
 float bandlimited(const std::array<std::array<float, table_size>, bands>& table,
                   std::uint32_t phase, std::uint32_t step) noexcept {
     if (step == 0) return table.back()[phase >> (32 - table_bits)];
-    const auto band = 31U - std::bit_width(step);
+    const auto band = 31U - static_cast<unsigned>(std::bit_width(step));
     const auto index = std::min<std::size_t>(band, bands - 1);
     const auto value = lookup(table[index], phase);
     if (index == 0 || band >= bands) return value;
