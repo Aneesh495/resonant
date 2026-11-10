@@ -4,7 +4,7 @@
 #include "resonant/wave.hpp"
 
 #include <algorithm>
-#include <charconv>
+#include "decimal.hpp"
 #include <chrono>
 #include <csignal>
 #include <fstream>
@@ -22,12 +22,9 @@ void interrupt(int) { interrupted = 1; }
 
 template<class T>
 T number(std::string_view text, T low, T high) {
-    T value{};
-    const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), value);
-    if (error != std::errc{} || end != text.data() + text.size() || !(value >= low && value <= high)) {
-        throw std::runtime_error("invalid numeric argument: " + std::string(text));
-    }
-    return value;
+    const auto value = decimal<T>(text);
+    if (!value || *value < low || *value > high) throw std::runtime_error("invalid numeric argument: " + std::string(text));
+    return *value;
 }
 
 void require_count(std::span<char*> args, std::size_t low, std::size_t high) {
