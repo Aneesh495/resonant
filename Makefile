@@ -53,7 +53,8 @@ device-smoke: build
 	$(BIN) play "$(PATCH)" "$(SECONDS)" "$(GAIN)" "$(DEVICE)" "$(RATE)" "$(BLOCK)"
 
 device-soak: build
-	$(BIN) play "$(PATCH)" 28800 "$(GAIN)" "$(DEVICE)" 48000 128
+	mkdir -p out
+	$(BIN) play "$(REFERENCE_PATCH)" 28800 "$(GAIN)" "$(DEVICE)" 48000 128 out/device-soak.csv
 
 .PHONY: workbench
 workbench: build
@@ -76,3 +77,27 @@ stress: build
 .PHONY: dsp-check
 dsp-check: build
 	python3 tools/measure_dsp.py "$(BIN)" out/dsp
+
+PROFILE ?= diagnostic
+RUN_ID ?= diagnostic
+EVIDENCE ?= evidence/$(RUN_ID)
+EXTRA_PROFILE_ARGS ?=
+REFERENCE_PATCH ?= patches/reference-64.rpatch
+STAGE ?= out/stage
+
+.PHONY: acceptance verify negative-controls bench release
+acceptance: build
+	python3 tools/evidence.py "$(BUILD)" "$(EVIDENCE)" --profile "$(PROFILE)" $(EXTRA_PROFILE_ARGS)
+
+verify:
+	python3 tools/verify_evidence.py "$(EVIDENCE)" --engine "$(BIN)"
+
+negative-controls:
+	python3 tools/negative_controls.py "$(EVIDENCE)" "$(BIN)" "$(EVIDENCE).negative-controls.json"
+
+bench: build
+	mkdir -p out
+	$(BIN) play "$(REFERENCE_PATCH)" "$(SECONDS)" 0 "$(DEVICE)" 48000 128 out/device.csv
+
+release: test demo
+	$(CMAKE) --install "$(BUILD)" --prefix "$(STAGE)"
