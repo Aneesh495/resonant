@@ -26,11 +26,12 @@ struct Engine::Impl {
     struct Package {
         Vm vm;
         std::uint64_t generation;
+        const std::uint64_t key;
         std::uint64_t base{};
         Vm::Migration migration{};
 
         Package(const VerifiedProgram& program, std::uint32_t rate, Execution execution, std::uint64_t id)
-            : vm(program, rate, execution), generation(id) {}
+            : vm(program, rate, execution), generation(id), key(program_key(program)) {}
     };
 
     static_assert(std::atomic<Package*>::is_always_lock_free);
@@ -210,6 +211,11 @@ void Engine::render(std::span<float> out, std::uint32_t device_flags, float gain
         return;
     }
     impl_->activate();
+    const auto capture = impl_->capture_enabled.load(std::memory_order_acquire);
+    // Retire may release the old package during this block. Read its identity before rendering.
+    const auto fade_frames = capture && impl_->fading != nullptr
+        ? std::min<std::size_t>(frames, swap_fade_frames - impl_->faded) : 0;
+    const auto fading_key = fade_frames != 0 ? impl_->fading->key : 0;
     if (impl_->cancel.load(std::memory_order_acquire)) {
         impl_->cancelled_events.fetch_add(impl_->events.discard_all(), std::memory_order_relaxed);
         (void)impl_->apply({impl_->cursor, EventType::panic});
@@ -239,11 +245,14 @@ void Engine::render(std::span<float> out, std::uint32_t device_flags, float gain
     impl_->segment(out.subspan(2 * rendered), trace);
     impl_->cursor = end;
 
-    if (impl_->capture_enabled.load(std::memory_order_acquire)) {
+    if (capture) {
         CaptureBlock block{};
         block.first_frame = trace.first_frame;
         block.generation = trace.generation;
+        block.program = impl_->current->key;
+        block.fading_program = fading_key;
         block.frames = trace.frames;
+        block.fade_frames = static_cast<std::uint32_t>(fade_frames);
         std::ranges::copy(out, block.interleaved.begin());
         if (!impl_->captured.push(block)) impl_->capture_full.fetch_add(1, std::memory_order_relaxed);
     }

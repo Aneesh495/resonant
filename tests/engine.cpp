@@ -24,7 +24,7 @@ int main() {
     CHECK(engine.poll(trace) && trace.first_frame == 0 && trace.applied_events == 2 && trace.absent_parameters == 1);
     CaptureBlock block;
     CHECK(engine.poll_capture(block) && block.first_frame == 0 && block.frames == 10 && block.interleaved[18] == 0.5F);
-    engine.capture(false);
+    CHECK(block.program == program_key(initial.program) && block.fade_frames == 0);
 
     const auto same = compile("param v=0.1; a=audio(v); out(a);");
     const auto louder = compile("param v=0; a=audio(v); b=add(a,0.25); out(b);");
@@ -34,6 +34,9 @@ int main() {
     CHECK(engine.generation() == 3 && engine.counters().superseded == 1);
     for (std::size_t i = 0; i < 128; ++i) CHECK(output[i*2] == 0.5F + 0.25F * static_cast<float>(i+1)/128);
     CHECK(engine.poll(trace) && trace.fade && trace.generation == 3);
+    CHECK(engine.poll_capture(block) && block.program == program_key(louder.program) &&
+          block.fading_program == program_key(initial.program) && block.fade_frames == 128);
+    engine.capture(false);
     engine.reclaim();
 
     for (std::size_t i = 0; i < event_queue_capacity; ++i) {

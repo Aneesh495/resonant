@@ -39,7 +39,10 @@ struct EngineCounters {
 struct CaptureBlock {
     std::uint64_t first_frame{};
     std::uint64_t generation{};
+    std::uint64_t program{};
+    std::uint64_t fading_program{};
     std::uint32_t frames{};
+    std::uint32_t fade_frames{};
     std::array<float, max_block * 2> interleaved{};
 };
 

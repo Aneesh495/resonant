@@ -139,9 +139,45 @@ std::string listing(const Compilation& compiled) {
     return out.str();
 }
 
-void wave_output(const Path& path, const std::vector<float>& samples, std::uint32_t rate) {
+struct CaptureLineage {
+    std::uint64_t first_frame{};
+    std::uint64_t first_program{};
+    std::uint64_t last_program{};
+    std::uint64_t frames{};
+    std::uint64_t digest{14695981039346656037ULL};
+
+    void append(const CaptureBlock& block, std::size_t count) {
+        const auto fade = std::min<std::uint64_t>(count, block.fade_frames);
+        if (frames == 0) {
+            first_frame = block.first_frame;
+            first_program = fade != 0 ? block.fading_program : block.program;
+        }
+        const std::array fields{block.first_frame, block.generation, block.program,
+                                block.fading_program, fade, static_cast<std::uint64_t>(count)};
+        for (auto value : fields) {
+            for (unsigned i = 0; i < 8; ++i) {
+                digest = (digest ^ (value & 255U)) * 1099511628211ULL;
+                value >>= 8U;
+            }
+        }
+        last_program = block.program;
+        frames += count;
+    }
+
+    [[nodiscard]] std::string comment() const {
+        std::ostringstream text;
+        text.imbue(std::locale::classic());
+        text << "Resonant capture frames=" << frames << " first_frame=" << first_frame
+             << std::hex << " first_program_id=" << first_program << " last_program_id=" << last_program
+             << " lineage_id=" << digest;
+        return text.str();
+    }
+};
+
+void wave_output(const Path& path, const std::vector<float>& samples, std::uint32_t rate,
+                 std::string_view identity) {
     const std::vector<double> pcm(samples.begin(), samples.end());
-    atomic_write(path, encode_wave(pcm, {Encoding::pcm24, rate, 2, 0}));
+    atomic_write(path, encode_wave(pcm, {Encoding::pcm24, rate, 2, 0, identity}));
 }
 
 std::uint64_t export_session(const Path& path, const Session& session, std::uint32_t rate,
@@ -150,7 +186,8 @@ std::uint64_t export_session(const Path& path, const Session& session, std::uint
     const auto timeline = schedule(session, rate);
     const auto result = render_offline(c.program, timeline, rate, 128, Execution::block, cancel);
     if (cancel && cancel->load()) throw std::runtime_error("export cancelled");
-    wave_output(path, result.samples, rate);
+    const auto identity = render_comment(timeline.frames, name_key(encode_session(session)), program_key(c.program));
+    wave_output(path, result.samples, rate, identity);
     return timeline.frames;
 }
 }
@@ -282,7 +319,8 @@ std::uint64_t export_session(const Path& path, const Session& session, std::uint
     std::size_t _scoreIndex;
     std::uint64_t _scoreBase;
     std::uint64_t _lastEvent;
-    std::uint64_t _captureNext;
+    CaptureLineage _captureLineage;
+    std::uint32_t _captureRate;
     std::uint64_t _captureOverflow;
     std::uint64_t _generation;
     std::uint64_t _underruns;
@@ -795,7 +833,8 @@ std::uint64_t export_session(const Path& path, const Session& session, std::uint
     CaptureBlock block;
     while (_engine->poll_capture(block)) {}
     _recorded.clear();
-    _captureNext = 0;
+    _captureLineage = {};
+    _captureRate = _engine->sample_rate();
     _captureOverflow = _engine->capture_overflow();
     _captureFailed = false;
     _recording = true;
@@ -806,18 +845,20 @@ std::uint64_t export_session(const Path& path, const Session& session, std::uint
 
 - (void)drainCapture {
     CaptureBlock block;
-    const auto capacity = static_cast<std::size_t>(_engine->sample_rate()) * 2 * 60;
+    const auto capacity = static_cast<std::size_t>(_captureRate) * 60;
     while (_engine->poll_capture(block)) {
-        if (_captureNext != 0 && _captureNext != block.first_frame) _captureFailed = true;
-        const auto count = static_cast<std::size_t>(2 * block.frames);
-        if (count > capacity - _recorded.size()) {
+        const auto remaining = capacity - _captureLineage.frames;
+        if (remaining == 0) continue;
+        if (_captureLineage.frames != 0 &&
+            _captureLineage.first_frame + _captureLineage.frames != block.first_frame) _captureFailed = true;
+        const auto frames = std::min<std::uint64_t>(remaining, block.frames);
+        const auto samples = static_cast<std::ptrdiff_t>(2 * frames);
+        _recorded.insert(_recorded.end(), block.interleaved.begin(), block.interleaved.begin() + samples);
+        _captureLineage.append(block, frames);
+        if (frames == remaining) {
             _engine->capture(false);
             [self message:"Recording reached the 60-second buffer limit" error:false];
-            continue;
         }
-        _recorded.insert(_recorded.end(), block.interleaved.begin(),
-                         block.interleaved.begin() + static_cast<std::ptrdiff_t>(count));
-        _captureNext = block.first_frame + block.frames;
     }
     _captureFailed |= _engine->capture_overflow() != _captureOverflow;
 }
@@ -838,7 +879,7 @@ std::uint64_t export_session(const Path& path, const Session& session, std::uint
         auto* panel = [NSSavePanel savePanel];
         panel.nameFieldStringValue = @"resonant-capture.wav";
         if ([panel runModal] != NSModalResponseOK) return;
-        wave_output(Path(panel.URL.fileSystemRepresentation), _recorded, [self selectedRate]);
+        wave_output(Path(panel.URL.fileSystemRepresentation), _recorded, _captureRate, _captureLineage.comment());
         [self message:"Recorded WAV saved" error:false];
     } catch (const std::exception& error) { [self message:error.what() error:true]; }
 }
@@ -999,7 +1040,7 @@ std::uint64_t export_session(const Path& path, const Session& session, std::uint
         [_window setContentSize:_window.contentMinSize];
         [self snapshot:dir / "workbench-compact.png"];
         [_window setContentSize:normal];
-        wave_output(dir / "capture.wav", _recorded, [self selectedRate]);
+        wave_output(dir / "capture.wav", _recorded, _captureRate, _captureLineage.comment());
         const auto frames = _recorded.size() / 2;
         if (!std::ranges::any_of(_recorded, [](float sample) { return std::abs(sample) > .001F; })) {
             throw std::runtime_error("recorded audio was silent");

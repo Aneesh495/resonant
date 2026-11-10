@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <span>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -27,6 +28,7 @@ struct WaveOptions {
     std::string_view comment{};
 };
 
+[[nodiscard]] std::string render_comment(std::uint64_t frames, std::uint64_t source_id, std::uint64_t program_id);
 [[nodiscard]] WaveView parse_wave(std::span<const std::byte> bytes);
 [[nodiscard]] std::vector<std::byte> encode_wave(std::span<const double> samples, WaveOptions options);
 [[nodiscard]] std::vector<double> map_channels(const WaveView& wave, std::uint16_t channels);

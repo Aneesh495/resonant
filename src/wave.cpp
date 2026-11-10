@@ -6,6 +6,8 @@
 #include <bit>
 #include <cmath>
 #include <limits>
+#include <locale>
+#include <sstream>
 #include <string_view>
 
 namespace resonant {
@@ -85,6 +87,13 @@ double WaveView::sample(std::size_t frame, std::size_t channel) const {
     const std::int64_t half = std::int64_t{1} << (8 * type.width - 1);
     const std::int64_t signed_value = raw >= half ? raw - 2 * half : raw;
     return static_cast<double>(signed_value) / static_cast<double>(half);
+}
+
+std::string render_comment(std::uint64_t frames, std::uint64_t source_id, std::uint64_t program_id) {
+    std::ostringstream text;
+    text.imbue(std::locale::classic());
+    text << "Resonant frames=" << frames << " source_id=" << std::hex << source_id << " program_id=" << program_id;
+    return text.str();
 }
 
 WaveView parse_wave(std::span<const std::byte> bytes) {
