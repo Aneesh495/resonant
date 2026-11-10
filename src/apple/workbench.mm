@@ -10,6 +10,43 @@
 #include <sstream>
 
 namespace {
+void control_surface(NSControl* control, NSString* title, bool primary, bool popup) {
+    const auto bounds = NSInsetRect(control.bounds, 1, 2);
+    const auto selected = primary || control.cell.highlighted;
+    auto* fill = selected ? [NSColor colorWithSRGBRed:.11 green:.41 blue:.44 alpha:1] :
+                           [NSColor colorWithSRGBRed:.15 green:.20 blue:.25 alpha:1];
+    auto* stroke = [NSColor colorWithSRGBRed:.27 green:.38 blue:.43 alpha:1];
+    if (control.window.firstResponder == control) stroke = NSColor.systemTealColor;
+    NSBezierPath* box = [NSBezierPath bezierPathWithRoundedRect:bounds xRadius:5 yRadius:5];
+    [fill setFill];
+    [box fill];
+    [stroke setStroke];
+    [box stroke];
+    NSDictionary* style = @{
+        NSFontAttributeName: [NSFont systemFontOfSize:12 weight:selected ? NSFontWeightSemibold : NSFontWeightMedium],
+        NSForegroundColorAttributeName: [NSColor colorWithSRGBRed:.88 green:.92 blue:.95 alpha:1]
+    };
+    const auto extent = [title sizeWithAttributes:style];
+    [title drawAtPoint:NSMakePoint(popup ? 10 : (NSWidth(bounds)-extent.width)/2+1,
+                                   (NSHeight(control.bounds)-extent.height)/2) withAttributes:style];
+    if (popup) [@"⌄" drawAtPoint:NSMakePoint(NSWidth(bounds)-16, (NSHeight(control.bounds)-extent.height)/2)
+                   withAttributes:style];
+}
+}
+
+@interface RButton : NSButton
+@end
+@implementation RButton
+- (void)drawRect:(NSRect)dirty { (void)dirty; control_surface(self, self.title, [self.title isEqualToString:@"Apply patch"], false); }
+@end
+
+@interface RPopup : NSPopUpButton
+@end
+@implementation RPopup
+- (void)drawRect:(NSRect)dirty { (void)dirty; control_surface(self, self.titleOfSelectedItem, false, true); }
+@end
+
+namespace {
 using namespace resonant;
 using Path = std::filesystem::path;
 
@@ -30,9 +67,11 @@ NSTextField* text(NSString* string, CGFloat size = 12, bool accent = false) {
 }
 
 NSButton* button(NSString* title, id target, SEL action, NSString* key = @"") {
-    auto* item = [NSButton buttonWithTitle:title target:target action:action];
+    auto* item = [[RButton alloc] initWithFrame:NSZeroRect];
+    item.title = title;
+    item.target = target;
+    item.action = action;
     item.keyEquivalent = key;
-    item.appearance = [NSAppearance appearanceNamed:NSAppearanceNameAqua];
     return item;
 }
 
@@ -112,6 +151,47 @@ std::uint64_t export_session(const Path& path, const Session& session, std::uint
     return timeline.frames;
 }
 }
+
+@interface REditorPanel : NSView
+- (instancetype)initWithSource:(NSView*)source listing:(NSView*)listing;
+@end
+
+@implementation REditorPanel {
+    NSView* _source;
+    NSView* _listing;
+    NSButton* _patch;
+    NSButton* _code;
+}
+- (instancetype)initWithSource:(NSView*)source listing:(NSView*)listing {
+    if ((self = [super initWithFrame:NSMakeRect(0,0,480,340)])) {
+        _source = source;
+        _listing = listing;
+        _patch = button(@"Patch source", self, @selector(showSource:));
+        _code = button(@"Compiled schedule", self, @selector(showCode:));
+        for (NSView* view in @[_source,_listing,_patch,_code]) [self addSubview:view];
+        [self showSource:nil];
+        [self setFrameSize:self.frame.size];
+    }
+    return self;
+}
+- (void)setFrameSize:(NSSize)size {
+    [super setFrameSize:size];
+    _source.frame = NSMakeRect(1, 0, size.width-1, std::max<CGFloat>(0, size.height-30));
+    _listing.frame = _source.frame;
+    _patch.frame = NSMakeRect(9, size.height-28, 117, 25);
+    _code.frame = NSMakeRect(133, size.height-28, 150, 25);
+}
+- (void)showSource:(id)sender {
+    (void)sender;
+    _listing.hidden = YES;
+    _source.hidden = NO;
+}
+- (void)showCode:(id)sender {
+    (void)sender;
+    _source.hidden = YES;
+    _listing.hidden = NO;
+}
+@end
 
 @interface RWorkbenchLayout : NSView
 @property(nonatomic, copy) NSArray<NSView*>* items;
@@ -237,13 +317,13 @@ std::uint64_t export_session(const Path& path, const Session& session, std::uint
     _audio = button(@"Start muted", self, @selector(toggleAudio:));
     _record = button(@"Record", self, @selector(toggleRecord:));
     _export = button(@"Export WAV", self, @selector(exportWave:));
-    _rate = [[NSPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO];
+    _rate = [[RPopup alloc] initWithFrame:NSZeroRect pullsDown:NO];
     [_rate addItemsWithTitles:@[@"44100", @"48000", @"96000"]];
     [_rate selectItemWithTitle:@"48000"];
     _rate.target = self;
     _rate.action = @selector(reconfigure:);
     [_rate setAccessibilityLabel:@"Sample rate"];
-    _output = [[NSPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO];
+    _output = [[RPopup alloc] initWithFrame:NSZeroRect pullsDown:NO];
     [_output addItemWithTitle:@"Default output"];
     _devices.push_back(-1);
     _output.target = self;
@@ -262,10 +342,10 @@ std::uint64_t export_session(const Path& path, const Session& session, std::uint
     _metrics = text(@"AUDIO OFF", 11, true);
     _metrics.lineBreakMode = NSLineBreakByTruncatingTail;
 
-    _from = [[NSPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO];
-    _to = [[NSPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO];
-    _port = [[NSPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO];
-    _parameter = [[NSPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO];
+    _from = [[RPopup alloc] initWithFrame:NSZeroRect pullsDown:NO];
+    _to = [[RPopup alloc] initWithFrame:NSZeroRect pullsDown:NO];
+    _port = [[RPopup alloc] initWithFrame:NSZeroRect pullsDown:NO];
+    _parameter = [[RPopup alloc] initWithFrame:NSZeroRect pullsDown:NO];
     _parameter.target = self;
     _parameter.action = @selector(selectParameter:);
     [_from setAccessibilityLabel:@"Source node"];
@@ -277,10 +357,6 @@ std::uint64_t export_session(const Path& path, const Session& session, std::uint
     _parameterValue = [NSSlider sliderWithValue:0 minValue:0 maxValue:1 target:self action:@selector(changeParameter:)];
     [_parameterValue setAccessibilityLabel:@"Parameter value"];
     minimum(_parameterValue, 90);
-    for (NSView* view in @[_rate, _output, _from, _to, _port, _parameter, _level, _parameterValue]) {
-        view.appearance = [NSAppearance appearanceNamed:NSAppearanceNameAqua];
-    }
-
     auto* brand = text(@"RESONANT", 17, true);
     minimum(brand, 99);
     auto* upper = row(@[brand, button(@"Open…", self, @selector(openSession:), @"o"),
@@ -292,22 +368,13 @@ std::uint64_t export_session(const Path& path, const Session& session, std::uint
     auto* route = row(@[text(@"ROUTE", 10, true), _from, text(@"→"), _to, _port,
         button(@"Connect", self, @selector(connect:)), text(@"CONTROL", 10, true), _parameter, _parameterValue]);
 
-    auto* tabs = [[NSTabView alloc] initWithFrame:NSMakeRect(0,0,480,340)];
-    tabs.appearance = [NSAppearance appearanceNamed:NSAppearanceNameAqua];
-    auto* patchTab = [[NSTabViewItem alloc] initWithIdentifier:@"source"];
-    patchTab.label = @"Patch source";
-    patchTab.view = scroll(_source);
-    auto* codeTab = [[NSTabViewItem alloc] initWithIdentifier:@"code"];
-    codeTab.label = @"Compiled schedule";
-    codeTab.view = scroll(_listing);
-    [tabs addTabViewItem:patchTab];
-    [tabs addTabViewItem:codeTab];
+    auto* pane = [[REditorPanel alloc] initWithSource:scroll(_source) listing:scroll(_listing)];
 
     auto* split = [[NSSplitView alloc] initWithFrame:NSMakeRect(0,0,1000,360)];
     split.vertical = YES;
     split.dividerStyle = NSSplitViewDividerStyleThin;
     [split addArrangedSubview:scroll(_graph)];
-    [split addArrangedSubview:tabs];
+    [split addArrangedSubview:pane];
 
     auto* layout = [[RWorkbenchLayout alloc] initWithFrame:_window.contentView.bounds];
     layout.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
@@ -754,9 +821,10 @@ std::uint64_t export_session(const Path& path, const Session& session, std::uint
         [self startAudio];
         [self startCapture];
         const auto before = encode(_compiled->program);
-        if (![self routeFrom:@"soft" to:@"right" port:0] || encode(_compiled->program) == before) {
-            throw std::runtime_error("live route failed");
+        if (![self routeFrom:@"soft" to:@"right" port:0]) {
+            throw std::runtime_error("live route failed: " + str(_message.stringValue));
         }
+        if (encode(_compiled->program) == before) throw std::runtime_error("live route left bytecode unchanged");
         if ([self applySource:"x=add(x,1); out(x);"]) throw std::runtime_error("invalid graph accepted");
         [self playNote:69 on:true];
         [self playScore:nil];
