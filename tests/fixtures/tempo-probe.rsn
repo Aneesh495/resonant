@@ -1,0 +1,21 @@
+resonant-session 2
+length 3000
+tempo 0 514373
+tempo 1139 638551
+note 49 401 0 55 .6
+note 411 728 2 67 .41
+note 1139 341 2 67 .59
+note 1432 543 1 64 .55
+note 1786 417 0 71 .52
+control 8 level .22 64
+control 1160 level .18 201
+control 2100 level .09 451
+pedal 982 2 1
+pedal 1949 2 0
+source
+param level=.25;
+v=poly_sine(.01,.04);
+m=mul(v,level);
+l=pan_left(m,-.4);
+r=pan_right(m,-.4);
+out(l,r);
