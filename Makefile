@@ -105,3 +105,15 @@ release: test demo
 .PHONY: docs
 docs:
 	python3 tools/check_docs.py
+
+FUZZ_BUILD ?= build-fuzz
+FUZZ_CMAKE_ARGS ?=
+
+.PHONY: fuzz
+fuzz:
+	$(CMAKE) -S . -B "$(FUZZ_BUILD)" -DCMAKE_BUILD_TYPE=RelWithDebInfo -DRESONANT_DEVICE=OFF -DRESONANT_WORKBENCH=OFF -DRESONANT_FUZZ=ON -DRESONANT_SANITIZE=ON $(FUZZ_CMAKE_ARGS)
+	$(CMAKE) --build "$(FUZZ_BUILD)" --target resonant_fuzz --parallel $(JOBS)
+	mkdir -p out/fuzz-corpus
+	printf '\001a=audio(.1);out(a);' > out/fuzz-corpus/source
+	printf '\003resonant-session 2\nlength 10\ntempo 0 500000\nsource\na=audio(.1);out(a);' > out/fuzz-corpus/session
+	"$(FUZZ_BUILD)/resonant_fuzz" -runs=20000 -max_len=4096 -timeout=2 -seed=20739 out/fuzz-corpus
