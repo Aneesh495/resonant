@@ -1,5 +1,7 @@
 #include "resonant/vm.hpp"
 
+#include "fp_mode.hpp"
+
 #include "dsp.hpp"
 #include "effects.hpp"
 #include "resonant/spectral.hpp"
@@ -371,7 +373,10 @@ std::span<const float> Vm::tail_registers() const noexcept { return impl_->tail;
 
 bool Vm::event(const Event& event) noexcept { return impl_->apply(event); }
 
+bool float_mode_available() noexcept { return numeric::native_float_mode; }
+
 RenderStats Vm::render(std::span<float> interleaved) noexcept {
+    [[maybe_unused]] const numeric::FloatMode mode;
     RenderStats stats{};
     const auto frames = interleaved.size() / 2;
     if (frames == 0 || frames > max_block || interleaved.size() % 2 != 0) return stats;

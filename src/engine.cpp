@@ -1,5 +1,7 @@
 #include "resonant/engine.hpp"
 
+#include "fp_mode.hpp"
+
 #include "spsc.hpp"
 
 #include <algorithm>
@@ -204,6 +206,7 @@ EngineCounters Engine::counters() const noexcept {
 
 void Engine::render(std::span<float> out, std::uint32_t device_flags, float gain) noexcept {
     const auto begin = Clock::now();
+    [[maybe_unused]] const numeric::FloatMode mode;
     const auto frames = out.size() / 2;
     if (frames == 0 || frames > max_block || out.size() % 2 != 0) return;
     if (frames > std::numeric_limits<std::uint64_t>::max() - impl_->cursor) {
