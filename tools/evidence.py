@@ -115,26 +115,30 @@ def collect(build, output, device, profile, gallery):
                      [engine, "render", session, parity / f"{sample_rate}-scalar.wav", sample_rate, 128, "pcm24", "scalar"])
     if gallery:
         recorder.run("gallery", [sys.executable, "tools/gallery.py", engine, output / "gallery"])
+    workbench = False
     if device:
         recorder.run("device", [engine, "play", "patches/reference-64.rpatch", 10, 0, -1, 48000, 128,
                                 output / "device.csv"])
         app = build / "Resonant.app" / "Contents" / "MacOS" / "Resonant"
         if app.is_file():
+            workbench = True
             recorder.run("workbench", [app, "--smoke", output / "workbench"])
+            recorder.run("midi_device", [build / "test_core_midi"])
     failures = [row["name"] for row in recorder.commands if row["required"] and row["exit"] != 0]
     write(output / "ACCEPTANCE.json", {"profile": profile, "source_commit": commit, "sample_rate": rate,
           "probe_file": fixture.as_posix(), "status": "failed" if failures else "diagnostic",
           "command_failures": failures, "matrix": {"rates": [44100, 48000, 96000],
-          "blocks": [32, 64, 128, 256, 512]}, "device_requested": device, "gallery_requested": gallery})
+                    "blocks": [32, 64, 128, 256, 512]}, "device_requested": device, "gallery_requested": gallery,
+          "workbench_requested": workbench})
     coverage = {
         "G01": ["tests/wave.cpp", "logs/tests.txt"],
         "G02": ["tests/differential.cpp", "logs/tests.txt"],
         "G03": ["tests/bytecode.cpp", "logs/tests.txt"],
         "G04": ["tests/campaigns.cpp", "logs/allocation.txt"],
-        "G05": ["tests/spectral.cpp", "logs/tests.txt"],
+        "G05": ["tests/spectral.cpp", "tests/numerical.cpp", "logs/tests.txt"],
         "G06": ["tools/measure_dsp.py", "spectral/spectral.csv"],
         "G07": ["src/simd.cpp", "parity/"],
-        "G08": ["src/session.cpp", "probe/events.csv"],
+        "G08": ["src/session.cpp", "probe/events.csv", "logs/midi_device.txt"],
         "G09": ["src/engine.cpp", "logs/swap.txt"],
         "G10": ["src/device.cpp", "device.csv"],
         "G12": ["src/apple/workbench.mm", "workbench/workbench.txt"],
