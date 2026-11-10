@@ -27,7 +27,8 @@ enum class Op : std::uint8_t {
     sine, saw, pulse, triangle, noise, delay_read, delay_write,
     lowpass, highpass, bandpass, saturate, pan_left, pan_right,
     poly_sine, poly_saw, poly_pulse, poly_triangle,
-    follower, compressor, gate, delay_mod, allpass, output, count
+    follower, compressor, gate, delay_mod, allpass, output,
+    align, convolve_short, convolve_long, room, oversaturate, limiter, count
 };
 
 struct Instruction {
@@ -66,6 +67,7 @@ struct Opcode {
     std::uint32_t work;
     // A delay ring is variable size. Other owners have fixed storage.
     std::uint32_t state_words;
+    std::uint32_t latency{};
 };
 
 [[nodiscard]] const Opcode& opcode(Op op);
@@ -77,14 +79,16 @@ public:
     [[nodiscard]] std::uint32_t work_per_frame() const noexcept { return work_; }
     [[nodiscard]] std::uint32_t state_words() const noexcept { return words_; }
     [[nodiscard]] bool has_feedback() const noexcept { return delay_; }
+    [[nodiscard]] std::array<std::uint32_t, 2> latency() const noexcept { return latency_; }
 
 private:
     friend VerifiedProgram verify(Program);
-    VerifiedProgram(Program, std::uint32_t, std::uint32_t, bool);
+    VerifiedProgram(Program, std::uint32_t, std::uint32_t, bool, std::array<std::uint32_t, 2>);
     Program program_;
     std::uint32_t work_;
     std::uint32_t words_;
     bool delay_;
+    std::array<std::uint32_t, 2> latency_;
 };
 
 [[nodiscard]] VerifiedProgram verify(Program program);

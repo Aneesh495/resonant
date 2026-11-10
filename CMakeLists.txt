@@ -15,7 +15,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
   endif()
 endif()
 
-add_library(resonant_core src/wave.cpp src/bytecode.cpp src/parser.cpp src/compiler.cpp src/dsp.cpp src/simd.cpp src/vm.cpp src/engine.cpp src/midi.cpp src/session.cpp src/files.cpp src/spectral.cpp)
+add_library(resonant_core src/wave.cpp src/bytecode.cpp src/parser.cpp src/compiler.cpp src/dsp.cpp src/simd.cpp src/vm.cpp src/engine.cpp src/midi.cpp src/session.cpp src/files.cpp src/spectral.cpp src/effects.cpp)
 target_include_directories(resonant_core PUBLIC include)
 
 function(resonant_test name)
@@ -60,3 +60,4 @@ target_link_libraries(resonant PRIVATE resonant_core)
 install(TARGETS resonant RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 
 resonant_test(spectral)
+resonant_test(effects)

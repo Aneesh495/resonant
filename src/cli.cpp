@@ -50,7 +50,8 @@ void summary(const VerifiedProgram& checked) {
     std::cout << "bytecode_version=" << bytecode_version << " instructions=" << program.instructions.size()
               << " registers=" << program.registers << " states=" << program.states.size()
               << " parameters=" << program.parameters.size() << " state_words=" << checked.state_words()
-              << " work_per_frame=" << checked.work_per_frame() << " feedback=" << checked.has_feedback() << '\n';
+              << " work_per_frame=" << checked.work_per_frame() << " feedback=" << checked.has_feedback()
+              << " left_latency=" << checked.latency()[0] << " right_latency=" << checked.latency()[1] << '\n';
 }
 
 void inspect(std::string_view path) {

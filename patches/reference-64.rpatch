@@ -1,0 +1,13 @@
+# Reference device workload: 64 sine voices, stereo partitioned early reflections,
+# two low-pass filters and stereo sample-peak limiters.
+param cutoff = 2100;
+param level = 0.24;
+voices = poly_sine(.008,.24);
+body = mul(voices,level);
+lc = lowpass(body,cutoff,.71);
+rc = lowpass(body,cutoff,.96);
+le = convolve_short(lc,.32);
+re = convolve_short(rc,.41);
+left = limiter(le,.72,.12);
+right = limiter(re,.72,.12);
+out(left,right);
