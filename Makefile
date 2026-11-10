@@ -54,3 +54,7 @@ device-smoke: build
 
 device-soak: build
 	$(BIN) play "$(PATCH)" 28800 "$(GAIN)" "$(DEVICE)" 48000 128
+
+.PHONY: workbench
+workbench: build
+	open "$(BUILD)/Resonant.app" --args "$(abspath $(SESSION))"

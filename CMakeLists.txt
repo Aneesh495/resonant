@@ -61,3 +61,21 @@ install(TARGETS resonant RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 
 resonant_test(spectral)
 resonant_test(effects)
+
+option(RESONANT_WORKBENCH "Build the native AppKit workbench on macOS" ON)
+if(APPLE AND RESONANT_WORKBENCH)
+  enable_language(OBJCXX)
+  set(starter compositions/ember-motif.rsn)
+  set_source_files_properties(${starter} PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
+  add_executable(resonant_workbench MACOSX_BUNDLE src/apple/workbench.mm src/apple/views.mm ${starter})
+  set_target_properties(resonant_workbench PROPERTIES
+    OUTPUT_NAME Resonant
+    OBJCXX_STANDARD 23 OBJCXX_STANDARD_REQUIRED YES OBJCXX_EXTENSIONS NO
+    MACOSX_BUNDLE_GUI_IDENTIFIER org.resonant.workbench
+    MACOSX_BUNDLE_BUNDLE_NAME Resonant
+    MACOSX_BUNDLE_BUNDLE_VERSION ${PROJECT_VERSION}
+    MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION})
+  target_compile_options(resonant_workbench PRIVATE -fobjc-arc)
+  target_link_libraries(resonant_workbench PRIVATE resonant_core "-framework AppKit")
+  install(TARGETS resonant_workbench BUNDLE DESTINATION .)
+endif()

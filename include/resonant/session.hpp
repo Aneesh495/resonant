@@ -2,6 +2,7 @@
 
 #include "resonant/engine.hpp"
 
+#include <atomic>
 #include <filesystem>
 #include <string>
 
@@ -90,5 +91,6 @@ struct OfflineRender {
 
 [[nodiscard]] OfflineRender render_offline(const VerifiedProgram& program, const Timeline& timeline,
                                            std::uint32_t sample_rate, std::size_t block_size,
-                                           Execution execution = Execution::block);
+                                           Execution execution = Execution::block,
+                                           const std::atomic<bool>* cancel = nullptr);
 }

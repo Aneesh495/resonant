@@ -248,14 +248,14 @@ void Engine::render(std::span<float> out, std::uint32_t device_flags, float gain
         if (!impl_->captured.push(block)) impl_->capture_full.fetch_add(1, std::memory_order_relaxed);
     }
 
+    trace.scope_size = static_cast<std::uint32_t>(std::min(trace.scope.size(), frames));
+    for (std::size_t i = 0; i < trace.scope_size; ++i) trace.scope[i] = out[2 * i * frames / trace.scope_size];
     gain = std::isfinite(gain) ? std::clamp(gain, 0.0F, 1.0F) : 0.0F;
     trace.render.peak = 0;
     for (auto& sample : out) {
         sample *= gain;
         trace.render.peak = std::max(trace.render.peak, std::abs(sample));
     }
-    trace.scope_size = static_cast<std::uint32_t>(std::min(trace.scope.size(), frames));
-    for (std::size_t i = 0; i < trace.scope_size; ++i) trace.scope[i] = out[2 * i * frames / trace.scope_size];
     impl_->completed.store(end, std::memory_order_release);
     trace.duration_ns = static_cast<std::uint64_t>(
         std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now() - begin).count());
