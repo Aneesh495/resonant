@@ -42,8 +42,11 @@ extern "C" int LLVMFuzzerTestOneInput(const std::uint8_t* data, std::size_t size
             break;
         }
         case 5: {
-            const auto known = compile("param g=.4; a=poly_sine(.1,.3); b=mul(a,g); out(b);");
-            auto encoded = encode(known.program);
+            const bool assets = size >= 2 && (data[1] & 1U) != 0;
+            static const auto plain = encode(compile("param g=.4; a=poly_sine(.1,.3); b=mul(a,g); out(b);").program);
+            static const auto embedded = encode(compile("impulse t=pcm(48000,.5,-.25,.125); a=audio(1); "
+                                                         "b=convolve_ir(a,1,t); out(b);").program);
+            auto encoded = assets ? embedded : plain;
             for (std::size_t i = 1; i + 1 < size && i < 256; i += 2) {
                 encoded[data[i] % encoded.size()] = static_cast<std::byte>(data[i+1]);
             }

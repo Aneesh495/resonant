@@ -117,15 +117,15 @@ public:
                 graph.output_span = complete(first.span);
                 continue;
             }
-            if (first.text == "impulse") {
-                if (graph.impulses.size() >= max_states) throw Diagnostic(first.span, "too many impulse assets");
-                graph.impulses.push_back(impulse(first.span));
+            if (first.text == "impulse" || first.text == "table") {
+                if (graph.assets.size() >= max_states) throw Diagnostic(first.span, "too many sample assets");
+                graph.assets.push_back(asset(first.span, first.text == "table"));
                 continue;
             }
             if (graph.expressions.size() >= max_declarations) throw Diagnostic(first.span, "too many declarations");
             const bool parameter = first.text == "param";
             const auto name = parameter ? expect(Kind::word, "expected parameter name") : first;
-            if (name.text == "out" || name.text == "param" || name.text == "impulse") throw Diagnostic(name.span, "reserved declaration name");
+            if (name.text == "out" || name.text == "param" || name.text == "impulse" || name.text == "table") throw Diagnostic(name.span, "reserved declaration name");
             expect(Kind::assign, "expected '='");
             if (parameter || token_.kind == Kind::number) {
                 const auto value = expect(Kind::number, "expected numeric default");
@@ -158,29 +158,36 @@ private:
         return begin;
     }
 
-    ImpulseAsset impulse(SourceSpan span) {
-        const auto name = expect(Kind::word, "expected impulse name");
-        if (name.text == "out" || name.text == "param" || name.text == "impulse") {
-            throw Diagnostic(name.span, "reserved impulse name");
+    SignalAsset asset(SourceSpan span, bool table) {
+        const auto name = expect(Kind::word, "expected asset name");
+        if (name.text == "out" || name.text == "param" || name.text == "impulse" || name.text == "table") {
+            throw Diagnostic(name.span, "reserved asset name");
         }
         expect(Kind::assign, "expected '='");
-        const auto kind = expect(Kind::word, "expected pcm(rate, samples...)");
-        if (kind.text != "pcm") throw Diagnostic(kind.span, "expected pcm(rate, samples...)");
-        const auto values = arguments(max_impulse_samples + 1);
-        if (values.size() < 2) throw Diagnostic(span, "expected sample rate and at least one impulse tap");
-        const auto& rate = values.front();
-        if (!rate.reference.empty() || rate.value < 8000 || rate.value > 192000 || std::floor(rate.value) != rate.value) {
-            throw Diagnostic(rate.span, "impulse sample rate must be an integer from 8000 to 192000");
+        const auto kind = expect(Kind::word, "expected pcm(rate, samples...) or cycle(samples...)");
+        if (kind.text != (table ? "cycle" : "pcm")) throw Diagnostic(kind.span, "unexpected asset initializer");
+        const auto first = table ? std::size_t{0} : std::size_t{1};
+        const auto values = arguments(max_asset_samples + first);
+        if (values.size() <= first) throw Diagnostic(span, "expected asset samples");
+        std::uint32_t rate = 0;
+        if (!table) {
+            const auto& field = values.front();
+            if (!field.reference.empty() || field.value < 8000 || field.value > 192000 ||
+                std::floor(field.value) != field.value) {
+                throw Diagnostic(field.span, "impulse sample rate must be an integer from 8000 to 192000");
+            }
+            rate = static_cast<std::uint32_t>(field.value);
         }
-        ImpulseAsset asset{complete(span), std::string(name.text), static_cast<std::uint32_t>(rate.value), {}};
-        asset.samples.reserve(values.size() - 1);
-        for (std::size_t i = 1; i < values.size(); ++i) {
-            const auto& tap = values[i];
-            if (!tap.reference.empty()) throw Diagnostic(tap.span, "impulse taps must be numeric literals");
-            asset.samples.push_back(tap.value);
+        SignalAsset result{complete(span), std::string(name.text), rate, {}};
+        result.samples.reserve(values.size() - first);
+        for (std::size_t i = first; i < values.size(); ++i) {
+            const auto& sample = values[i];
+            if (!sample.reference.empty()) throw Diagnostic(sample.span, "asset samples must be numeric literals");
+            result.samples.push_back(sample.value);
         }
-        if (!valid_impulse(asset.samples, asset.rate)) throw Diagnostic(span, "impulse exceeds its extent or gain bound");
-        return asset;
+        const auto valid = table ? valid_wavetable(result.samples) : valid_impulse(result.samples, rate);
+        if (!valid) throw Diagnostic(span, "sample asset exceeds its extent or gain bound");
+        return result;
     }
 
     std::vector<Argument> arguments(std::size_t limit) {

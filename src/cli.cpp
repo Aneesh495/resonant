@@ -199,6 +199,7 @@ void usage() {
               << "resonant schedule SESSION [RATE]\n"
               << "resonant wave-info WAVE\n"
               << "resonant import-impulse WAVE NAME\n"
+              << "resonant import-wavetable WAVE NAME\n"
               << "resonant devices\n"
               << "resonant play PATCH SECONDS [GAIN [DEVICE [RATE [BLOCK [TRACE_CSV]]]]]\n"
               << "resonant doctor\n";
@@ -251,10 +252,12 @@ void command(std::string_view mode, std::span<char*> args) {
                       << static_cast<unsigned>(event.channel) << ',' << static_cast<unsigned>(event.note) << ','
                       << event.key << ',' << event.value << ',' << event.ramp << '\n';
         }
-    } else if (mode == "import-impulse") {
+    } else if (mode == "import-impulse" || mode == "import-wavetable") {
         require_count(args, 2, 2);
         const auto bytes = read_file(args[0], 2 * 1024 * 1024);
-        std::cout << impulse_declaration(args[1], parse_wave(bytes));
+        const auto wave = parse_wave(bytes);
+        std::cout << (mode == "import-impulse" ? impulse_declaration(args[1], wave)
+                                              : wavetable_declaration(args[1], wave));
     } else if (mode == "wave-info") {
         require_count(args, 1, 1);
         const auto bytes = read_file(args[0], 256 * 1024 * 1024);

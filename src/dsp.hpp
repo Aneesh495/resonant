@@ -6,11 +6,22 @@ namespace resonant::dsp {
 inline constexpr std::size_t table_bits = 12;
 inline constexpr std::size_t table_size = 1U << table_bits;
 inline constexpr std::size_t bands = 8;
+using BandTable = std::array<std::array<float, table_size>, bands>;
+inline constexpr std::uint32_t wavetable_words = bands * table_size + max_asset_samples;
+
+class Wavetable {
+public:
+    explicit Wavetable(std::span<const float> samples);
+    [[nodiscard]] float sample(std::uint32_t phase, std::uint32_t step) const noexcept;
+
+private:
+    BandTable bands_{};
+};
 
 struct Tables {
     std::array<float, table_size> sine{};
-    std::array<std::array<float, table_size>, bands> saw{};
-    std::array<std::array<float, table_size>, bands> triangle{};
+    BandTable saw{};
+    BandTable triangle{};
     Tables();
 };
 
