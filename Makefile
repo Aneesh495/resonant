@@ -58,3 +58,10 @@ device-soak: build
 .PHONY: workbench
 workbench: build
 	open "$(BUILD)/Resonant.app" --args "$(abspath $(SESSION))"
+
+.PHONY: patch-gallery data
+patch-gallery: build
+	python3 tools/gallery.py "$(BIN)" out/gallery
+
+data:
+	ls patches/*.rpatch compositions/*.rsn

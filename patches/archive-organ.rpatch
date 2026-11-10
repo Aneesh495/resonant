@@ -1,0 +1,8 @@
+# Deliberate gain staging exposes compressor and lookahead behavior.
+v = poly_saw(.016,.24);
+f = lowpass(v,3200,.9);
+c = compressor(f,.16,.09);
+gain = mul(c,.54);
+l = limiter(gain,.63,.06);
+r = pan_right(l,-.04);
+out(l,r);

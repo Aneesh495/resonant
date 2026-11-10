@@ -1,0 +1,12 @@
+# A soft tremulant spreads a held organ chord without detuning it.
+base = poly_sine(.045,.32);
+over = poly_triangle(.07,.47);
+depth = mul(over,.35);
+body = add(base,depth);
+lfo = sine(4.8);
+trem = mul(lfo,.15);
+gain = add(trem,.45);
+m = mul(body,gain);
+l = pan_left(m,-.12);
+r = pan_right(m,-.12);
+out(l,r);

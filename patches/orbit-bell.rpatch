@@ -1,0 +1,13 @@
+# One oscillator moves the stereo pan and a second adds a bell sideband.
+param orbit = .27;
+v = poly_sine(.003,.31);
+ring = sine(617.4);
+metal = mul(v,ring);
+blend = mul(metal,.18);
+clean = mul(v,.36);
+m = add(blend,clean);
+phase = sine(orbit);
+pan = mul(phase,.85);
+l = pan_left(m,pan);
+r = pan_right(m,pan);
+out(l,r);

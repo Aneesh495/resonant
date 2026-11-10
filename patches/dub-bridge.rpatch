@@ -1,0 +1,11 @@
+# A delayed graph edge closes a sample-clocked feedback loop.
+param regen = .49;
+v = poly_sine(.006,.13);
+memory = delay(sum,11000);
+color = lowpass(memory,1100,.73);
+back = mul(color,regen);
+sum = add(v,back);
+dry = mul(v,.24);
+send = mul(color,.24);
+right = add(dry,send);
+out(dry,right);

@@ -1,0 +1,10 @@
+# A parallel saturator with its clean branch aligned by 31 frames.
+param drive = 4;
+v = poly_sine(.01,.21);
+dirty = oversaturate(v,drive);
+dry = align(v,31);
+clean = mul(dry,.19);
+colored = mul(dirty,.14);
+l = add(clean,colored);
+r = sub(clean,colored);
+out(l,r);

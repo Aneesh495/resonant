@@ -1,0 +1,12 @@
+# Fractional chorus around a close, narrow pulse sound.
+v = poly_pulse(.017,.33);
+a = highpass(v,110,.68);
+motion = sine(.61);
+swing = mul(motion,56);
+t = add(swing,260);
+wet = delay_mod(a,t,.24);
+direct = mul(a,.19);
+send = mul(wet,.14);
+l = add(direct,send);
+r = sub(direct,send);
+out(l,r);

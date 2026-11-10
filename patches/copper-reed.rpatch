@@ -1,0 +1,8 @@
+# Resonant reed attack with a lower dry component.
+param resonance = 3.7;
+v = poly_saw(.022,.17);
+formant = bandpass(v,1350,resonance);
+dry = mul(v,.09);
+wet = mul(formant,.28);
+mix = add(dry,wet);
+out(mix);

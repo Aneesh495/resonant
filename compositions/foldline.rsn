@@ -1,0 +1,34 @@
+resonant-session 2
+length 11520
+tempo 0 396000
+tempo 7680 458000
+note 0 900 0 40 .72
+note 960 440 0 52 .59
+note 1440 440 0 55 .55
+note 1920 900 0 38 .7
+note 2180 540 0 57 .64
+note 3140 490 0 62 .49
+note 3840 880 0 43 .66
+note 4320 340 0 59 .56
+note 4800 700 0 67 .44
+note 5760 1250 0 45 .68
+note 5920 1020 0 52 .48
+note 6220 800 0 60 .54
+note 7680 1350 0 40 .63
+note 8160 1020 0 55 .55
+note 9120 1160 0 64 .46
+control 0 drive 2 0
+control 1920 drive 6 16000
+control 5760 drive 10 22000
+control 7680 drive 2 30000
+source
+# A parallel saturator with its clean branch aligned by 31 frames.
+param drive = 4;
+v = poly_sine(.01,.21);
+dirty = oversaturate(v,drive);
+dry = align(v,31);
+clean = mul(dry,.19);
+colored = mul(dirty,.14);
+l = add(clean,colored);
+r = sub(clean,colored);
+out(l,r);
