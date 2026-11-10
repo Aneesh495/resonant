@@ -50,6 +50,8 @@ struct Engine::Impl {
     std::atomic<std::uint64_t> completed{};
     std::atomic<std::uint64_t> generation{1};
     std::atomic<bool> emergency{};
+    std::atomic<bool> cancel{};
+    std::atomic<std::uint64_t> cancelled_events{};
     std::atomic<bool> capture_enabled{};
     Spsc<Event, event_queue_capacity> events;
     Spsc<Trace, 512> traces;
@@ -150,6 +152,7 @@ std::uint64_t Engine::publish(const VerifiedProgram& program) {
 }
 
 Enqueue Engine::enqueue(const Event& event) noexcept {
+    if (cancellation_pending()) return Enqueue::cancellation_pending;
     if (!valid_event(event)) {
         impl_->queue_invalid.fetch_add(1, std::memory_order_relaxed);
         return Enqueue::invalid;
@@ -167,6 +170,13 @@ Enqueue Engine::enqueue(const Event& event) noexcept {
 }
 
 void Engine::panic() noexcept { impl_->emergency.store(true, std::memory_order_release); }
+
+void Engine::cancel_events() noexcept {
+    impl_->last_accepted = 0;
+    impl_->cancel.store(true, std::memory_order_release);
+}
+
+bool Engine::cancellation_pending() const noexcept { return impl_->cancel.load(std::memory_order_acquire); }
 
 void Engine::reclaim() noexcept { delete impl_->retired.exchange(nullptr, std::memory_order_acq_rel); }
 
@@ -188,7 +198,7 @@ EngineCounters Engine::counters() const noexcept {
     return {impl_->queue_full.load(std::memory_order_relaxed), impl_->queue_invalid.load(std::memory_order_relaxed),
             impl_->queue_order.load(std::memory_order_relaxed), impl_->trace_full.load(std::memory_order_relaxed),
             impl_->superseded.load(std::memory_order_relaxed), impl_->activated.load(std::memory_order_relaxed),
-            impl_->migration_misses.load(std::memory_order_relaxed)};
+            impl_->migration_misses.load(std::memory_order_relaxed), impl_->cancelled_events.load(std::memory_order_relaxed)};
 }
 
 void Engine::render(std::span<float> out, std::uint32_t device_flags, float gain) noexcept {
@@ -200,6 +210,11 @@ void Engine::render(std::span<float> out, std::uint32_t device_flags, float gain
         return;
     }
     impl_->activate();
+    if (impl_->cancel.load(std::memory_order_acquire)) {
+        impl_->cancelled_events.fetch_add(impl_->events.discard_all(), std::memory_order_relaxed);
+        (void)impl_->apply({impl_->cursor, EventType::panic});
+        impl_->cancel.store(false, std::memory_order_release);
+    }
     if (impl_->emergency.exchange(false, std::memory_order_acq_rel)) {
         (void)impl_->apply({impl_->cursor, EventType::panic});
     }
@@ -224,14 +239,6 @@ void Engine::render(std::span<float> out, std::uint32_t device_flags, float gain
     impl_->segment(out.subspan(2 * rendered), trace);
     impl_->cursor = end;
 
-    gain = std::isfinite(gain) ? std::clamp(gain, 0.0F, 1.0F) : 0.0F;
-    trace.render.peak = 0;
-    for (auto& sample : out) {
-        sample *= gain;
-        trace.render.peak = std::max(trace.render.peak, std::abs(sample));
-    }
-    trace.scope_size = static_cast<std::uint32_t>(std::min(trace.scope.size(), frames));
-    for (std::size_t i = 0; i < trace.scope_size; ++i) trace.scope[i] = out[2 * i * frames / trace.scope_size];
     if (impl_->capture_enabled.load(std::memory_order_acquire)) {
         CaptureBlock block{};
         block.first_frame = trace.first_frame;
@@ -240,6 +247,15 @@ void Engine::render(std::span<float> out, std::uint32_t device_flags, float gain
         std::ranges::copy(out, block.interleaved.begin());
         if (!impl_->captured.push(block)) impl_->capture_full.fetch_add(1, std::memory_order_relaxed);
     }
+
+    gain = std::isfinite(gain) ? std::clamp(gain, 0.0F, 1.0F) : 0.0F;
+    trace.render.peak = 0;
+    for (auto& sample : out) {
+        sample *= gain;
+        trace.render.peak = std::max(trace.render.peak, std::abs(sample));
+    }
+    trace.scope_size = static_cast<std::uint32_t>(std::min(trace.scope.size(), frames));
+    for (std::size_t i = 0; i < trace.scope_size; ++i) trace.scope[i] = out[2 * i * frames / trace.scope_size];
     impl_->completed.store(end, std::memory_order_release);
     trace.duration_ns = static_cast<std::uint64_t>(
         std::chrono::duration_cast<std::chrono::nanoseconds>(Clock::now() - begin).count());

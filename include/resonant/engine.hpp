@@ -7,7 +7,7 @@ inline constexpr std::uint32_t event_queue_capacity = 4096;
 inline constexpr std::uint32_t events_per_callback = 128;
 inline constexpr std::uint32_t swap_fade_frames = 128;
 
-enum class Enqueue { accepted, invalid, out_of_order, full };
+enum class Enqueue { accepted, invalid, out_of_order, full, cancellation_pending };
 
 struct Trace {
     std::uint64_t first_frame{};
@@ -33,6 +33,7 @@ struct EngineCounters {
     std::uint64_t superseded{};
     std::uint64_t activated{};
     std::uint64_t migration_misses{};
+    std::uint64_t cancelled_events{};
 };
 
 struct CaptureBlock {
@@ -54,6 +55,8 @@ public:
     [[nodiscard]] std::uint64_t publish(const VerifiedProgram& program);
     [[nodiscard]] Enqueue enqueue(const Event& event) noexcept;
     void panic() noexcept;
+    void cancel_events() noexcept;
+    [[nodiscard]] bool cancellation_pending() const noexcept;
     void reclaim() noexcept;
     [[nodiscard]] bool poll(Trace& trace) noexcept;
     void capture(bool enabled) noexcept;

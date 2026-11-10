@@ -45,6 +45,14 @@ int main() {
     engine.render(output);
     CHECK(engine.poll(trace) && trace.late_events == events_per_callback);
 
+    engine.cancel_events();
+    CHECK(engine.enqueue({engine.clock(), EventType::panic}) == Enqueue::cancellation_pending);
+    engine.render(output);
+    CHECK(!engine.cancellation_pending());
+    CHECK(engine.counters().cancelled_events == event_queue_capacity - 2 * events_per_callback);
+    CHECK(engine.poll(trace) && trace.applied_events == 0);
+    CHECK(engine.enqueue({engine.clock(), EventType::panic}) == Enqueue::accepted);
+
     Engine concurrent(initial.program, 48000);
     std::atomic<bool> stop{false};
     std::thread audio([&] {
