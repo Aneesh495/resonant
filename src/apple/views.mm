@@ -96,7 +96,8 @@ constexpr std::array<const char*, 13> letters{"A","W","S","E","D","F","T","G","Y
 
 - (void)drawRect:(NSRect)rect {
     [panel() setFill];
-    NSRectFill(rect);
+    (void)rect;
+    NSRectFill(self.bounds);
     label(@"SIGNAL FLOW", NSMakePoint(27, 10), 11, mint(), true);
     label(_wire.empty() ? @"Click an output then an input" : [@"Route " stringByAppendingString:ns(_wire)],
           NSMakePoint(176, 10), 10, muted());
@@ -202,7 +203,8 @@ constexpr std::array<const char*, 13> letters{"A","W","S","E","D","F","T","G","Y
 
 - (void)drawRect:(NSRect)rect {
     [panel() setFill];
-    NSRectFill(rect);
+    (void)rect;
+    NSRectFill(self.bounds);
     const auto full = NSWidth(self.bounds);
     const auto h = NSHeight(self.bounds);
     const auto half = full / 2;
@@ -280,7 +282,8 @@ constexpr std::array<const char*, 13> letters{"A","W","S","E","D","F","T","G","Y
 }
 - (void)drawRect:(NSRect)rect {
     [panel() setFill];
-    NSRectFill(rect);
+    (void)rect;
+    NSRectFill(self.bounds);
     const auto w = NSWidth(self.bounds) / keys.size();
     for (std::size_t i = 0; i < keys.size(); ++i) {
         const auto x = static_cast<CGFloat>(i)*w;
