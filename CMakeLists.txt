@@ -14,3 +14,16 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
     add_link_options(-fsanitize=address,undefined)
   endif()
 endif()
+
+add_library(resonant_core src/wave.cpp)
+target_include_directories(resonant_core PUBLIC include)
+
+function(resonant_test name)
+  if(BUILD_TESTING)
+    add_executable(test_${name} tests/${name}.cpp)
+    target_link_libraries(test_${name} PRIVATE resonant_core)
+    add_test(NAME ${name} COMMAND test_${name})
+  endif()
+endfunction()
+
+resonant_test(wave)

@@ -1,0 +1,7 @@
+# PCM framing and quantization
+
+The decoder accepts little-endian RIFF with mono or stereo signed PCM16/24/32 or IEEE binary32/binary64. The RIFF size must match the input. Each chunk has a bounded payload and an alignment byte for odd lengths. One format chunk and one data chunk are required. Unknown chunks are skipped. Extended and compressed formats are rejected.
+
+Integer normalization divides the sign-extended value by 2^(bits-1). The encoder rounds to nearest with ties away from zero, clamps to the signed range and writes the low bytes. Positive and negative full scale are asymmetric. The float decoder retains finite samples above unity and substitutes zero for nonfinite samples. The original bytes remain available in the view. Stereo downmix gives each side half weight. Mono expands at unity.
+
+An optional seeded xorshift generator subtracts two independent uniform draws per sample to produce triangular dither in quantizer units. The silence check counts the three resulting PCM16 levels against the theoretical 1:6:1 proportions. It does not characterize audible noise or distortion for arbitrary inputs.
