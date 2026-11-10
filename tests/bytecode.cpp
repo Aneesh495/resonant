@@ -1,9 +1,84 @@
 #include "resonant/bytecode.hpp"
+#include "resonant/vm.hpp"
 #include "test.hpp"
 
 #include <random>
 
 using namespace resonant;
+
+namespace {
+Program multi_state(std::uint32_t first, std::uint32_t alignment, std::uint32_t second, float level) {
+    return {6, {{1, Op::delay_read, first}, {2, Op::align, alignment}, {3, Op::delay_read, second}},
+            {{41, level}},
+            {{Op::parameter, Rate::control, 0},
+             {Op::audio, Rate::audio, 1, {0}},
+             {Op::delay_read, Rate::audio, 2},
+             {Op::align, Rate::audio, 3, {2}, 1},
+             {Op::delay_read, Rate::audio, 4, {}, 2},
+             {Op::add, Rate::audio, 5, {3, 4}},
+             {Op::delay_write, Rate::audio, 0, {1}},
+             {Op::delay_write, Rate::audio, 0, {2}, 2},
+             {Op::output, Rate::audio, 0, {3, 5}}}};
+}
+
+void check_mixed_state() {
+    std::mt19937 rng(0x543210);
+    for (unsigned i = 0; i < 50000; ++i) {
+        const auto first = 1U + static_cast<std::uint32_t>(rng() % 31);
+        const auto alignment = 1U + static_cast<std::uint32_t>(rng() % 31);
+        const auto second = 1U + static_cast<std::uint32_t>(rng() % 31);
+        const auto level = static_cast<float>(rng() % 32) / 128;
+        auto graph = multi_state(first, alignment, second, level);
+        const bool valid = i % 2 == 0;
+        if (valid) {
+            const auto verified = verify(graph);
+            CHECK(verified.work_per_frame() == 37 && verified.state_words() == first + alignment + second);
+            const auto bytes = encode(verified);
+            auto decoded = decode(bytes);
+            CHECK(encode(decoded) == bytes);
+            if (i < 100) {
+                Vm vm(decoded, 48000);
+                std::array<float, 144> out{};
+                const auto stats = vm.render(out);
+                CHECK(stats.instructions == 9 * out.size() / 2 && stats.clipped == 0);
+                for (std::size_t f = 0; f < out.size()/2; ++f) {
+                    const auto left = f >= first + alignment ? level : 0.F;
+                    const auto extra = f >= first + second ? level : 0.F;
+                    CHECK(out[2*f] == left && out[2*f+1] == left + extra);
+                }
+            }
+            continue;
+        }
+        switch (rng() % 8) {
+        case 0: graph.states[0].words = 0; break;
+        case 1: graph.states[1].words = max_delay + 1; break;
+        case 2: graph.states[1].key = graph.states[2].key; break;
+        case 3: graph.instructions[7].slot = 0; break; // Two writes to one delay.
+        case 4: graph.instructions[7].slot = 1; break; // Align is not a feedback delay.
+        case 5: graph.instructions[3].in[0] = 0; break; // Control wired into audio-only input.
+        case 6: graph.instructions[5].dst = 3; break; // Output aliases a live source.
+        case 7: std::swap(graph.instructions[5], graph.instructions[6]); break; // Work after delay write.
+        }
+        rejects([&] { (void)verify(std::move(graph)); });
+    }
+
+    auto large = multi_state(max_delay, max_delay, max_delay, .25F);
+    for (std::uint64_t key = 4; key <= 9; ++key) large.states.push_back({key, Op::align, max_delay});
+    rejects([&] { (void)verify(large); }); // Nine legal extents exceed the aggregate state budget.
+
+    Program heavy{3, {}, {},
+                  {{Op::literal, Rate::control, 0, {}, 0, .25F}, {Op::audio, Rate::audio, 1, {0}}}};
+    for (std::uint16_t i = 0; i < 3; ++i) {
+        heavy.states.push_back({i + 1ULL, Op::convolve_long, 16384});
+        heavy.instructions.push_back({Op::convolve_long, Rate::audio, 2, {1, 0}, i});
+    }
+    heavy.instructions.push_back({Op::output, Rate::audio, 0, {2, 2}});
+    CHECK(verify(heavy).work_per_frame() == 126006);
+    heavy.states.push_back({4, Op::convolve_short, 8192});
+    heavy.instructions.insert(heavy.instructions.end()-1, {Op::convolve_short, Rate::audio, 2, {1, 0}, 3});
+    rejects([&] { (void)verify(std::move(heavy)); }); // Valid independent operations exceed the work budget.
+}
+}
 
 int main() {
     Program base{
@@ -59,5 +134,6 @@ int main() {
             rejects([&] { (void)verify(std::move(candidate)); });
         }
     }
-    std::cout << "1000000 independently labeled fixed-template programs\n";
+    check_mixed_state();
+    std::cout << "1000000 fixed-template and 50000 mixed-state programs with independent expectations\n";
 }
