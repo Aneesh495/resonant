@@ -1,0 +1,13 @@
+digraph resonant {
+  rankdir=LR;
+  bgcolor="#101820";
+  label="One-frame feedback";
+  labelloc=t; fontcolor="#d9e7ec"; fontname="Helvetica";
+  node [shape=box style="rounded,filled" fillcolor="#1e303d" color="#426474" fontcolor="#d9e7ec" fontname="Helvetica"];
+  edge [color="#55baad" fontcolor="#acc3ce" fontname="Helvetica" fontsize=10];
+  "Delay ring at n" -> "Delay read" [label="old sample"];
+  "Delay read" -> "Acyclic instructions" [label="current frame"];
+  "Acyclic instructions" -> "Delay commit" [label="new input"];
+  "Delay commit" -> "Delay ring at n+1" [label="cursor advance"];
+  "Acyclic instructions" -> "Stereo output" [label="bounded samples"];
+}
