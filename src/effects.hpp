@@ -7,6 +7,15 @@ inline constexpr std::uint32_t limiter_latency = 64;
 inline constexpr std::uint32_t halfband_length = 63;
 inline constexpr std::uint32_t oversampling_latency = (halfband_length - 1) / 2;
 inline constexpr std::uint32_t tank_words = 65536;
+inline constexpr std::uint32_t hq_halfband_length = 129;
+inline constexpr std::uint32_t hq_state_words = 6 * hq_halfband_length;
+inline constexpr std::uint32_t hq_latency = 112;
+using HqHalfband = std::array<float, hq_halfband_length>;
+
+[[nodiscard]] const HqHalfband& hq_halfband();
+[[nodiscard]] const HqHalfband& hq_guard();
+[[nodiscard]] float oversaturate_hq(const HqHalfband& coeff, const HqHalfband& guard, std::span<float> state,
+                                   std::array<std::uint32_t, 6>& cursors, float input, float drive) noexcept;
 
 struct Tank {
     std::array<std::uint32_t, 6> start{};

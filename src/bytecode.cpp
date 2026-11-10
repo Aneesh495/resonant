@@ -50,7 +50,8 @@ constexpr std::array<Opcode, static_cast<std::size_t>(Op::count)> contracts{{
     {"convolve_long",  2, Rule::first_audio, true, 42000, 16384, 128},
     {"room",         3, Rule::first_audio, true, 160, dsp::tank_words},
     {"oversaturate", 2, Rule::first_audio, true, 1350, 2 * dsp::halfband_length, dsp::oversampling_latency},
-    {"limiter",      3, Rule::first_audio, true, 170, dsp::limiter_latency + 1, dsp::limiter_latency}
+    {"limiter",      3, Rule::first_audio, true, 170, dsp::limiter_latency + 1, dsp::limiter_latency},
+    {"oversaturate_hq", 2, Rule::first_audio, true, 12000, dsp::hq_state_words, dsp::hq_latency}
 }};
 
 constexpr std::uint32_t magic = 0x43534252; // RBSC

@@ -28,7 +28,7 @@ enum class Op : std::uint8_t {
     lowpass, highpass, bandpass, saturate, pan_left, pan_right,
     poly_sine, poly_saw, poly_pulse, poly_triangle,
     follower, compressor, gate, delay_mod, allpass, output,
-    align, convolve_short, convolve_long, room, oversaturate, limiter, count
+    align, convolve_short, convolve_long, room, oversaturate, limiter, oversaturate_hq, count
 };
 
 struct Instruction {

@@ -15,3 +15,7 @@ The oversampled saturator inserts zeros at 2×, interpolates with a 63-tap Black
 The limiter keeps a 64-frame lookahead and scans the delayed samples and current input. It applies immediate gain reduction and a release envelope. Its guarantee covers discrete sample peaks. The separate compressor uses a fixed 4:1 ratio and has no lookahead. The gate and follower expose envelope time controls.
 
 The verifier reports left and right algorithmic path latency. Add `align(signal, frames)` to compensate a parallel dry branch. Echo and tank tails are intentional and excluded from algorithmic latency. The report gives the maximum explicit latency along each output path. A mixed path can have multiple arrival times.
+
+The high-quality saturator uses three 2× stages in each direction. The 129-tap half-band filters leave the center and odd offsets active. Each decimation stage evaluates only the sample it keeps. The 8× path has 112 native frames of nominal group delay, since the six filter delays sum to 2 × (64/2 + 64/4 + 64/8). It costs more work and storage than the 2× path. The two implementations use the same transfer curve and retain separate bytecode opcodes.
+
+The last high-quality decimation stage uses a guard-band cutoff at 0.45 cycles per native sample. It retains the same tap count and nominal delay while attenuating some upper-band content. The half-band-only pilot leaked the ninth harmonic of the middle-bin test near Nyquist.

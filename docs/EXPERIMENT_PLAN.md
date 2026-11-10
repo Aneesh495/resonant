@@ -20,3 +20,11 @@ The diagnostic uses the standard build, the cases above, a short muted device ru
 The full profile additionally needs a pinned device identifier, eight elapsed hours on device and another eight elapsed hours offline, callback-wide allocation, deallocation, lock and blocking I/O instrumentation, stable memory and drift measurements, fault and recovery injections, and clean hosted publication. The direct offline stress must cover graph replacement, MIDI bursts, rate changes and cancellation. Device reconfiguration and rate negotiation are separately measured. Physical loopback latency requires loopback hardware.
 
 Record the OS, compiler, CPU, PortAudio version, sample rate and actual block extrema. Hardware deadlines are soft real-time observations. Compare performance claims only when host and workload match. Preserve logs for every failed unit, including instrumented runs and aborted runs. Aggregate results cannot replace per-unit observations.
+
+## Spectral protocol v2
+
+Keep the v1 rates, bins, drive, threshold and source waveform. Preserve all v1 baseline cases alongside a new 8× implementation using cascaded half-band stages. Evaluate the high-quality path under the original -60 dBc threshold. The 2× cases remain labeled baseline and retain their measured failures.
+
+## Spectral protocol v3
+
+Retain the v2 inputs and decisions. The high-quality implementation replaces the last decimation stage with a 129-tap guard-band low-pass at 0.225 cycles per intermediate-rate sample. This sacrifices part of the upper passband to reject harmonics immediately beyond native Nyquist. The [v2 pilot](results/spectral-pilot-v2.csv) retains the results from the half-band-only design.

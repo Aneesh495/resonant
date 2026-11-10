@@ -33,6 +33,7 @@ struct Memory {
     std::vector<Voice> voices;
     std::unique_ptr<Convolver> convolution;
     dsp::Tank tank;
+    std::array<std::uint32_t, 6> fir_cursors{};
     std::uint32_t cursor{};
     std::uint32_t rng{};
 };
@@ -110,6 +111,8 @@ struct Vm::Impl {
     Execution execution;
     const dsp::Tables& tables;
     const dsp::Halfband& halfband;
+    const dsp::HqHalfband& hq_halfband;
+    const dsp::HqHalfband& hq_guard;
     std::vector<float> registers;
     std::vector<float> tail;
     std::vector<Memory> memory;
@@ -120,7 +123,9 @@ struct Vm::Impl {
 
     Impl(const VerifiedProgram& program, std::uint32_t sample_rate, Execution mode)
         : checked(verify(program.program())), rate(sample_rate), inverse_rate(1.0 / sample_rate), execution(mode),
-          tables(dsp::tables()), halfband(dsp::halfband()), registers(checked.program().registers * max_block),
+          tables(dsp::tables()), halfband(dsp::halfband()), hq_halfband(dsp::hq_halfband()),
+          hq_guard(dsp::hq_guard()),
+          registers(checked.program().registers * max_block),
           tail(checked.program().registers), memory(checked.program().states.size()),
           parameters(checked.program().parameters.size()) {
         for (std::size_t i = 0; i < memory.size(); ++i) {
@@ -256,6 +261,10 @@ struct Vm::Impl {
         case Op::oversaturate: {
             auto& state = memory[ins.slot];
             return dsp::oversaturate(halfband, state.cells, state.cursor, x, y);
+        }
+        case Op::oversaturate_hq: {
+            auto& state = memory[ins.slot];
+            return dsp::oversaturate_hq(hq_halfband, hq_guard, state.cells, state.fir_cursors, x, y);
         }
         case Op::limiter: {
             auto& state = memory[ins.slot];
@@ -424,6 +433,7 @@ void Vm::migrate(const Vm& previous, const Migration& plan) noexcept {
         std::ranges::copy(from.voices, to.voices.begin());
         to.cursor = from.cursor;
         to.rng = from.rng;
+        to.fir_cursors = from.fir_cursors;
     }
     for (std::size_t i = 0; i < impl_->parameters.size(); ++i) {
         if (plan.parameters[i] >= 0) {
